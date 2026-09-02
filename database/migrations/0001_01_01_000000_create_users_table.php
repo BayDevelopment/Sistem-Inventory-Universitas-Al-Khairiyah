@@ -17,6 +17,31 @@ return new class extends Migration
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
+
+            // --- PERAN, IDENTITAS & FAKULTAS ---
+            $table->enum('role', [
+                'super_admin',
+                'admin_fakultas',
+                'sdm',
+                'dosen',
+                'mahasiswa'
+            ])->default('mahasiswa');
+
+            $table->string('identity_number')->nullable()->unique(); // NIM / NIP / NIDN
+
+            // Gunakan foreignId agar terhubung dengan relasi faculty() di Model
+            $table->foreignId('faculty_id')->nullable()->constrained('faculties')->nullOnDelete();
+            $table->string('department')->nullable(); // Program Studi
+            $table->string('phone_number')->nullable();
+
+            // --- STATUS AKUN ---
+            $table->enum('status', ['active', 'pending', 'suspended'])->default('active');
+
+            // --- TWO-FACTOR AUTHENTICATION ---
+            $table->text('two_factor_secret')->nullable();
+            $table->text('two_factor_recovery_codes')->nullable();
+            $table->timestamp('two_factor_confirmed_at')->nullable();
+
             $table->rememberToken();
             $table->timestamps();
         });
