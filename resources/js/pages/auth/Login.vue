@@ -3,12 +3,12 @@ import { ref } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { register } from '@/routes';
 
-// PENTING: Bypass & matikan layout bawaan Starter Kit (logo Laravel & container pink kecil)
+// Bypass layout bawaan
 defineOptions({
     layout: (h, page) => page,
 });
 
-// State untuk toggle visibilitas password
+// State & handler toggle password
 const showPassword = ref(false);
 
 const togglePasswordVisibility = () => {
@@ -126,14 +126,12 @@ const submit = () => {
                                     placeholder="••••••••"
                                     class="w-full rounded-lg border border-[#e3e3e0] bg-transparent py-2.5 pl-3.5 pr-10 text-sm text-[#1b1b18] placeholder-[#a1a09a] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433]"
                                 />
-                                <!-- Icon Toggle Password (Tanda Mata) -->
                                 <button
                                     type="button"
                                     @click="togglePasswordVisibility"
                                     class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-[#706f6c] hover:text-[#1b1b18] dark:text-[#A1A09A] dark:hover:text-[#EDEDEC]"
                                     tabindex="-1"
                                 >
-                                    <!-- Icon Mata Terbuka -->
                                     <svg
                                         v-if="showPassword"
                                         xmlns="http://www.w3.org/2000/svg"
@@ -154,7 +152,6 @@ const submit = () => {
                                             d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"
                                         />
                                     </svg>
-                                    <!-- Icon Mata Tertutup -->
                                     <svg
                                         v-else
                                         xmlns="http://www.w3.org/2000/svg"
@@ -262,7 +259,6 @@ const submit = () => {
                             & Inertia.js.
                         </p>
                     </div>
-                    <!-- Soft Background Gradient Blur -->
                     <div
                         class="absolute -bottom-10 -right-10 h-48 w-48 rounded-full bg-[#f53003]/20 blur-3xl dark:bg-[#FF4433]/20"
                     ></div>

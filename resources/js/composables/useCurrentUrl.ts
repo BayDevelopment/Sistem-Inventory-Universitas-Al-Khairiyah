@@ -51,7 +51,6 @@ export function useCurrentUrl(): UseCurrentUrlReturn {
 
         try {
             const absoluteUrl = new URL(urlString);
-
             return comparePath(absoluteUrl.pathname);
         } catch {
             return false;

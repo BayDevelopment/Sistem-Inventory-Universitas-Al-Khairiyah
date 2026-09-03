@@ -10,35 +10,43 @@ const props = defineProps<ToasterProps>()
 </script>
 
 <template>
-  <Sonner
-    :class="cn('toaster group', props.class)"
-    :style="{
-      '--normal-bg': 'var(--popover)',
-      '--normal-text': 'var(--popover-foreground)',
-      '--normal-border': 'var(--border)',
-      '--border-radius': 'var(--radius)',
-    }"
-    v-bind="props"
-  >
-    <template #success-icon>
-      <CircleCheckIcon class="size-4" />
-    </template>
-    <template #info-icon>
-      <InfoIcon class="size-4" />
-    </template>
-    <template #warning-icon>
-      <TriangleAlertIcon class="size-4" />
-    </template>
-    <template #error-icon>
-      <OctagonXIcon class="size-4" />
-    </template>
-    <template #loading-icon>
-      <div>
-        <Loader2Icon class="size-4 animate-spin" />
-      </div>
-    </template>
-    <template #close-icon>
-      <XIcon class="size-4" />
-    </template>
-  </Sonner>
+    <Sonner
+        :class="cn('toaster group font-sans', props.class)"
+        :style="{
+            '--normal-bg': 'var(--popover)',
+            '--normal-text': 'var(--popover-foreground)',
+            '--normal-border': 'var(--border)',
+            '--border-radius': 'var(--radius)',
+            '--font': 'var(--font-sans)',
+        }"
+        v-bind="props"
+    >
+        <template #success-icon>
+            <CircleCheckIcon class="size-4" />
+        </template>
+        <template #info-icon>
+            <InfoIcon class="size-4" />
+        </template>
+        <template #warning-icon>
+            <TriangleAlertIcon class="size-4" />
+        </template>
+        <template #error-icon>
+            <OctagonXIcon class="size-4" />
+        </template>
+        <template #loading-icon>
+            <div>
+                <Loader2Icon class="size-4 animate-spin" />
+            </div>
+        </template>
+        <template #close-icon>
+            <XIcon class="size-4" />
+        </template>
+    </Sonner>
 </template>
+
+<style scoped>
+:deep([data-sonner-toaster]),
+:deep([data-sonner-toast]) {
+    font-family: var(--font-sans) !important;
+}
+</style>

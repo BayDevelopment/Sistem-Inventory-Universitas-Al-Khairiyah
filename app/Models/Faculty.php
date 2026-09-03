@@ -9,6 +9,14 @@ class Faculty extends Model
 {
     protected $guarded = [];
 
+    /**
+     * Relasi ke model StudyProgram
+     */
+    public function studyPrograms(): HasMany
+    {
+        return $this->hasMany(StudyProgram::class);
+    }
+
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
