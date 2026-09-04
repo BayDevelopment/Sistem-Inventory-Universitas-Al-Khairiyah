@@ -9,19 +9,22 @@ return new class extends Migration
     /**
      * Run the migrations.
      */
-    public function up(): void {
+    public function up(): void
+    {
         Schema::create('room_inventories', function (Blueprint $table) {
             $table->id();
             $table->foreignId('room_id')->constrained('rooms')->onDelete('cascade');
             $table->foreignId('item_id')->constrained('items')->onDelete('cascade');
-            $table->string('asset_code')->unique(); // Kode Unik Aset (e.g. FT-LAB1-MEJA-001)
+            $table->string('asset_code')->unique();
             $table->enum('condition', ['good', 'damaged_light', 'damaged_heavy'])->default('good');
             $table->boolean('is_borrowable')->default(true);
+            $table->text('notes')->nullable();
             $table->timestamps();
         });
     }
 
-    public function down(): void {
+    public function down(): void
+    {
         Schema::dropIfExists('room_inventories');
     }
 };

@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\FacultyController;
+use App\Http\Controllers\RoomController;
+use App\Http\Controllers\RoomInventoryController;
 use App\Http\Controllers\StudyProgramController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -38,6 +40,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::resource('faculties', FacultyController::class)->only(['index', 'store', 'update', 'destroy']);
 
             Route::resource('study-programs', StudyProgramController::class)->only(['store', 'update', 'destroy']);
+
+            Route::resource('rooms', RoomController::class);
+            Route::resource('room-inventories', RoomInventoryController::class);
         });
 
 

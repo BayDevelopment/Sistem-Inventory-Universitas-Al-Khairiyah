@@ -10,6 +10,10 @@ class RoomInventory extends Model
 {
     protected $guarded = [];
 
+    protected $casts = [
+        'is_borrowable' => 'boolean',
+    ];
+
     public function room(): BelongsTo
     {
         return $this->belongsTo(Room::class);

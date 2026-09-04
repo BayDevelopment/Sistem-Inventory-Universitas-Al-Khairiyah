@@ -315,522 +315,538 @@ const deleteProdi = (prodiId: number) => {
 <template>
     <Head title="Fakultas & Prodi - Sistem Inventory" />
 
-    <div class="flex flex-1 flex-col gap-6 p-4 md:p-6">
-        <!-- STATS CARDS -->
-        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <template v-if="isLoading">
-                <div
-                    v-for="i in 3"
-                    :key="i"
-                    class="animate-pulse rounded-xl border border-black/5 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-[#161615]"
-                >
-                    <div class="flex items-center justify-between">
-                        <div
-                            class="h-3 w-28 rounded bg-slate-200 dark:bg-zinc-800"
-                        ></div>
-                        <div
-                            class="h-9 w-9 rounded-lg bg-slate-200 dark:bg-zinc-800"
-                        ></div>
-                    </div>
-                    <div class="mt-4 space-y-2">
-                        <div
-                            class="h-8 w-16 rounded bg-slate-200 dark:bg-zinc-800"
-                        ></div>
-                        <div
-                            class="h-3 w-36 rounded bg-slate-200 dark:bg-zinc-800"
-                        ></div>
-                    </div>
-                </div>
-            </template>
-
-            <template v-else>
-                <div
-                    class="group relative overflow-hidden rounded-xl border border-black/5 bg-white p-5 shadow-sm transition hover:shadow-md dark:border-white/10 dark:bg-[#161615]"
-                >
-                    <div class="flex items-center justify-between">
-                        <span
-                            class="text-xs font-semibold uppercase tracking-wider text-[#706f6c] dark:text-[#A1A09A]"
-                            >Total Fakultas</span
-                        >
-                        <div
-                            class="flex h-9 w-9 items-center justify-center rounded-lg bg-[#fff2f2] text-[#f53003] transition group-hover:bg-[#f53003] group-hover:text-white dark:bg-[#1D0002] dark:text-[#FF4433] dark:group-hover:bg-[#FF4433] dark:group-hover:text-white"
-                        >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke-width="1.5"
-                                stroke="currentColor"
-                                class="h-5 w-5"
-                            >
-                                <path
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    d="M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.36 48.36 0 0 0 12 9.75c-2.551 0-5.056.2-7.5.582V21M3 21h18"
-                                />
-                            </svg>
-                        </div>
-                    </div>
-                    <div class="mt-4">
-                        <div
-                            class="text-3xl font-bold tracking-tight text-[#1b1b18] dark:text-[#EDEDEC]"
-                        >
-                            {{ totalFaculties }}
-                        </div>
-                        <p
-                            class="mt-1 text-xs text-[#706f6c] dark:text-[#A1A09A]"
-                        >
-                            Fakultas aktif
-                        </p>
-                    </div>
-                    <div
-                        class="absolute bottom-0 left-0 h-[2px] w-full bg-[#f53003]/20 opacity-0 transition group-hover:opacity-100 dark:bg-[#FF4433]/30"
-                    ></div>
-                </div>
-
-                <div
-                    class="group relative overflow-hidden rounded-xl border border-black/5 bg-white p-5 shadow-sm transition hover:shadow-md dark:border-white/10 dark:bg-[#161615]"
-                >
-                    <div class="flex items-center justify-between">
-                        <span
-                            class="text-xs font-semibold uppercase tracking-wider text-[#706f6c] dark:text-[#A1A09A]"
-                            >Total Program Studi</span
-                        >
-                        <div
-                            class="flex h-9 w-9 items-center justify-center rounded-lg bg-[#fff2f2] text-[#f53003] transition group-hover:bg-[#f53003] group-hover:text-white dark:bg-[#1D0002] dark:text-[#FF4433] dark:group-hover:bg-[#FF4433] dark:group-hover:text-white"
-                        >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke-width="1.5"
-                                stroke="currentColor"
-                                class="h-5 w-5"
-                            >
-                                <path
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.62 48.62 0 0 1 12 20.904a48.62 48.62 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.636 50.636 0 0 0-2.658-.813A59.906 59.906 0 0 1 12 3.493a59.903 59.903 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.717 50.717 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342"
-                                />
-                            </svg>
-                        </div>
-                    </div>
-                    <div class="mt-4">
-                        <div
-                            class="text-3xl font-bold tracking-tight text-[#1b1b18] dark:text-[#EDEDEC]"
-                        >
-                            {{ totalStudyPrograms }}
-                        </div>
-                        <p
-                            class="mt-1 text-xs text-[#706f6c] dark:text-[#A1A09A]"
-                        >
-                            Program studi terdaftar
-                        </p>
-                    </div>
-                    <div
-                        class="absolute bottom-0 left-0 h-[2px] w-full bg-[#f53003]/20 opacity-0 transition group-hover:opacity-100 dark:bg-[#FF4433]/30"
-                    ></div>
-                </div>
-
-                <div
-                    class="group relative overflow-hidden rounded-xl border border-black/5 bg-white p-5 shadow-sm transition hover:shadow-md sm:col-span-2 lg:col-span-1 dark:border-white/10 dark:bg-[#161615]"
-                >
-                    <div class="flex items-center justify-between">
-                        <span
-                            class="text-xs font-semibold uppercase tracking-wider text-[#706f6c] dark:text-[#A1A09A]"
-                            >Aksi Cepat</span
-                        >
-                        <div
-                            class="flex h-9 w-9 items-center justify-center rounded-lg bg-[#fff2f2] text-[#f53003] dark:bg-[#1D0002] dark:text-[#FF4433]"
-                        >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke-width="1.5"
-                                stroke="currentColor"
-                                class="h-5 w-5"
-                            >
-                                <path
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    d="M12 4.5v15m7.5-7.5h-15"
-                                />
-                            </svg>
-                        </div>
-                    </div>
-                    <div class="mt-3 flex flex-col gap-2">
-                        <button
-                            @click="openCreateFacultyModal"
-                            class="flex w-full items-center justify-center gap-2 rounded-lg bg-[#1b1b18] px-3 py-2 text-xs font-medium text-white transition hover:bg-black dark:bg-[#EDEDEC] dark:text-[#1c1c1a] dark:hover:bg-white"
-                        >
-                            <span>+ Tambah Fakultas Baru</span>
-                        </button>
-                    </div>
-                </div>
-            </template>
+    <div class="relative flex flex-1 flex-col gap-6 overflow-hidden p-4 md:p-6">
+        <!-- Animated decorative background -->
+        <div class="pointer-events-none absolute inset-0 overflow-hidden">
+            <div
+                class="animate-blob absolute -left-24 -top-24 h-72 w-72 rounded-full bg-[#f53003]/10 blur-3xl dark:bg-[#FF4433]/10 sm:h-96 sm:w-96"
+            ></div>
+            <div
+                class="animate-blob animation-delay-2000 absolute -bottom-24 -right-16 h-72 w-72 rounded-full bg-[#f53003]/5 blur-3xl dark:bg-[#FF4433]/10 sm:h-96 sm:w-96"
+            ></div>
+            <div
+                class="animate-blob animation-delay-4000 absolute left-1/2 top-1/3 h-56 w-56 -translate-x-1/2 rounded-full bg-amber-300/5 blur-3xl dark:bg-amber-500/10 sm:h-72 sm:w-72"
+            ></div>
         </div>
 
-        <!-- MAIN CONTENT SECTION -->
-        <div
-            class="flex flex-1 flex-col rounded-xl border border-black/5 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-[#161615]"
-        >
-            <div
-                class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-            >
+        <!-- Wrapper konten asli, di atas blob -->
+        <div class="relative z-10 flex flex-1 flex-col gap-6 opacity-100 transition-opacity duration-750 starting:opacity-0">
+            <!-- STATS CARDS -->
+            <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <template v-if="isLoading">
-                    <div class="animate-pulse space-y-2">
-                        <div
-                            class="h-5 w-64 rounded bg-slate-200 dark:bg-zinc-800"
-                        ></div>
-                        <div
-                            class="h-3 w-80 rounded bg-slate-200 dark:bg-zinc-800"
-                        ></div>
-                    </div>
                     <div
-                        class="h-9 w-full rounded-lg bg-slate-200 sm:w-72 dark:bg-zinc-800"
-                    ></div>
-                </template>
-                <template v-else>
-                    <div>
-                        <h2
-                            class="text-lg font-semibold tracking-tight text-[#1b1b18] dark:text-[#EDEDEC]"
-                        >
-                            Master Data Fakultas & Program Studi
-                        </h2>
-                        <p class="text-xs text-[#706f6c] dark:text-[#A1A09A]">
-                            Kelola struktur unit fakultas dan jurusan di
-                            lingkungan kampus.
-                        </p>
+                        v-for="i in 3"
+                        :key="i"
+                        class="animate-pulse rounded-xl border border-black/5 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-[#161615]"
+                    >
+                        <div class="flex items-center justify-between">
+                            <div
+                                class="h-3 w-28 rounded bg-slate-200 dark:bg-zinc-800"
+                            ></div>
+                            <div
+                                class="h-9 w-9 rounded-lg bg-slate-200 dark:bg-zinc-800"
+                            ></div>
+                        </div>
+                        <div class="mt-4 space-y-2">
+                            <div
+                                class="h-8 w-16 rounded bg-slate-200 dark:bg-zinc-800"
+                            ></div>
+                            <div
+                                class="h-3 w-36 rounded bg-slate-200 dark:bg-zinc-800"
+                            ></div>
+                        </div>
                     </div>
-                    <div class="relative w-full sm:w-72">
-                        <input
-                            v-model="searchQuery"
-                            type="text"
-                            placeholder="Cari fakultas atau prodi..."
-                            class="w-full rounded-lg border border-[#e3e3e0] bg-transparent py-2 pl-9 pr-3.5 text-xs text-[#1b1b18] placeholder-[#a1a09a] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433]"
-                        />
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke-width="1.5"
-                            stroke="currentColor"
-                            class="absolute left-3 top-2.5 h-4 w-4 text-[#706f6c] dark:text-[#A1A09A]"
-                        >
-                            <path
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
-                            />
-                        </svg>
+                </template>
+
+                <template v-else>
+                    <div
+                        class="group relative overflow-hidden rounded-xl border border-black/5 bg-white p-5 shadow-sm transition hover:shadow-md dark:border-white/10 dark:bg-[#161615]"
+                    >
+                        <div class="flex items-center justify-between">
+                            <span
+                                class="text-xs font-semibold uppercase tracking-wider text-[#706f6c] dark:text-[#A1A09A]"
+                                >Total Fakultas</span
+                            >
+                            <div
+                                class="flex h-9 w-9 items-center justify-center rounded-lg bg-[#fff2f2] text-[#f53003] transition group-hover:bg-[#f53003] group-hover:text-white dark:bg-[#1D0002] dark:text-[#FF4433] dark:group-hover:bg-[#FF4433] dark:group-hover:text-white"
+                            >
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke-width="1.5"
+                                    stroke="currentColor"
+                                    class="h-5 w-5"
+                                >
+                                    <path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        d="M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.36 48.36 0 0 0 12 9.75c-2.551 0-5.056.2-7.5.582V21M3 21h18"
+                                    />
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="mt-4">
+                            <div
+                                class="text-3xl font-bold tracking-tight text-[#1b1b18] dark:text-[#EDEDEC]"
+                            >
+                                {{ totalFaculties }}
+                            </div>
+                            <p
+                                class="mt-1 text-xs text-[#706f6c] dark:text-[#A1A09A]"
+                            >
+                                Fakultas aktif
+                            </p>
+                        </div>
+                        <div
+                            class="absolute bottom-0 left-0 h-[2px] w-full bg-[#f53003]/20 opacity-0 transition group-hover:opacity-100 dark:bg-[#FF4433]/30"
+                        ></div>
+                    </div>
+
+                    <div
+                        class="group relative overflow-hidden rounded-xl border border-black/5 bg-white p-5 shadow-sm transition hover:shadow-md dark:border-white/10 dark:bg-[#161615]"
+                    >
+                        <div class="flex items-center justify-between">
+                            <span
+                                class="text-xs font-semibold uppercase tracking-wider text-[#706f6c] dark:text-[#A1A09A]"
+                                >Total Program Studi</span
+                            >
+                            <div
+                                class="flex h-9 w-9 items-center justify-center rounded-lg bg-[#fff2f2] text-[#f53003] transition group-hover:bg-[#f53003] group-hover:text-white dark:bg-[#1D0002] dark:text-[#FF4433] dark:group-hover:bg-[#FF4433] dark:group-hover:text-white"
+                            >
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke-width="1.5"
+                                    stroke="currentColor"
+                                    class="h-5 w-5"
+                                >
+                                    <path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.62 48.62 0 0 1 12 20.904a48.62 48.62 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.636 50.636 0 0 0-2.658-.813A59.906 59.906 0 0 1 12 3.493a59.903 59.903 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.717 50.717 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342"
+                                    />
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="mt-4">
+                            <div
+                                class="text-3xl font-bold tracking-tight text-[#1b1b18] dark:text-[#EDEDEC]"
+                            >
+                                {{ totalStudyPrograms }}
+                            </div>
+                            <p
+                                class="mt-1 text-xs text-[#706f6c] dark:text-[#A1A09A]"
+                            >
+                                Program studi terdaftar
+                            </p>
+                        </div>
+                        <div
+                            class="absolute bottom-0 left-0 h-[2px] w-full bg-[#f53003]/20 opacity-0 transition group-hover:opacity-100 dark:bg-[#FF4433]/30"
+                        ></div>
+                    </div>
+
+                    <div
+                        class="group relative overflow-hidden rounded-xl border border-black/5 bg-white p-5 shadow-sm transition hover:shadow-md sm:col-span-2 lg:col-span-1 dark:border-white/10 dark:bg-[#161615]"
+                    >
+                        <div class="flex items-center justify-between">
+                            <span
+                                class="text-xs font-semibold uppercase tracking-wider text-[#706f6c] dark:text-[#A1A09A]"
+                                >Aksi Cepat</span
+                            >
+                            <div
+                                class="flex h-9 w-9 items-center justify-center rounded-lg bg-[#fff2f2] text-[#f53003] dark:bg-[#1D0002] dark:text-[#FF4433]"
+                            >
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke-width="1.5"
+                                    stroke="currentColor"
+                                    class="h-5 w-5"
+                                >
+                                    <path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        d="M12 4.5v15m7.5-7.5h-15"
+                                    />
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="mt-3 flex flex-col gap-2">
+                            <button
+                                @click="openCreateFacultyModal"
+                                class="flex w-full items-center justify-center gap-2 rounded-lg bg-[#1b1b18] px-3 py-2 text-xs font-medium text-white transition hover:bg-black dark:bg-[#EDEDEC] dark:text-[#1c1c1a] dark:hover:bg-white"
+                            >
+                                <span>+ Tambah Fakultas Baru</span>
+                            </button>
+                        </div>
                     </div>
                 </template>
             </div>
 
-            <div v-if="isLoading" class="space-y-4">
+            <!-- MAIN CONTENT SECTION -->
+            <div
+                class="flex flex-1 flex-col rounded-xl border border-black/5 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-[#161615]"
+            >
                 <div
-                    v-for="i in 3"
-                    :key="i"
-                    class="animate-pulse overflow-hidden rounded-xl border border-[#e3e3e0] bg-[#FDFDFC] p-4 dark:border-[#3E3E3A] dark:bg-[#0a0a0a]"
+                    class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
                 >
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-3">
+                    <template v-if="isLoading">
+                        <div class="animate-pulse space-y-2">
                             <div
-                                class="h-7 w-7 rounded-lg bg-slate-200 dark:bg-zinc-800"
+                                class="h-5 w-64 rounded bg-slate-200 dark:bg-zinc-800"
                             ></div>
-                            <div class="space-y-2">
-                                <div class="flex items-center gap-2">
+                            <div
+                                class="h-3 w-80 rounded bg-slate-200 dark:bg-zinc-800"
+                            ></div>
+                        </div>
+                        <div
+                            class="h-9 w-full rounded-lg bg-slate-200 sm:w-72 dark:bg-zinc-800"
+                        ></div>
+                    </template>
+                    <template v-else>
+                        <div>
+                            <h2
+                                class="text-lg font-semibold tracking-tight text-[#1b1b18] dark:text-[#EDEDEC]"
+                            >
+                                Master Data Fakultas & Program Studi
+                            </h2>
+                            <p class="text-xs text-[#706f6c] dark:text-[#A1A09A]">
+                                Kelola struktur unit fakultas dan jurusan di
+                                lingkungan kampus.
+                            </p>
+                        </div>
+                        <div class="relative w-full sm:w-72">
+                            <input
+                                v-model="searchQuery"
+                                type="text"
+                                placeholder="Cari fakultas atau prodi..."
+                                class="w-full rounded-lg border border-[#e3e3e0] bg-transparent py-2 pl-9 pr-3.5 text-xs text-[#1b1b18] placeholder-[#a1a09a] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433]"
+                            />
+                            <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke-width="1.5"
+                                stroke="currentColor"
+                                class="absolute left-3 top-2.5 h-4 w-4 text-[#706f6c] dark:text-[#A1A09A]"
+                            >
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
+                                />
+                            </svg>
+                        </div>
+                    </template>
+                </div>
+
+                <div v-if="isLoading" class="space-y-4">
+                    <div
+                        v-for="i in 3"
+                        :key="i"
+                        class="animate-pulse overflow-hidden rounded-xl border border-[#e3e3e0] bg-[#FDFDFC] p-4 dark:border-[#3E3E3A] dark:bg-[#0a0a0a]"
+                    >
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div
+                                    class="h-7 w-7 rounded-lg bg-slate-200 dark:bg-zinc-800"
+                                ></div>
+                                <div class="space-y-2">
+                                    <div class="flex items-center gap-2">
+                                        <div
+                                            class="h-4 w-10 rounded bg-slate-200 dark:bg-zinc-800"
+                                        ></div>
+                                        <div
+                                            class="h-4 w-40 rounded bg-slate-200 dark:bg-zinc-800"
+                                        ></div>
+                                    </div>
                                     <div
-                                        class="h-4 w-10 rounded bg-slate-200 dark:bg-zinc-800"
-                                    ></div>
-                                    <div
-                                        class="h-4 w-40 rounded bg-slate-200 dark:bg-zinc-800"
+                                        class="h-3 w-52 rounded bg-slate-200 dark:bg-zinc-800"
                                     ></div>
                                 </div>
+                            </div>
+                            <div class="flex items-center gap-2">
                                 <div
-                                    class="h-3 w-52 rounded bg-slate-200 dark:bg-zinc-800"
+                                    class="h-7 w-16 rounded-lg bg-slate-200 dark:bg-zinc-800"
+                                ></div>
+                                <div
+                                    class="h-7 w-7 rounded-lg bg-slate-200 dark:bg-zinc-800"
                                 ></div>
                             </div>
                         </div>
-                        <div class="flex items-center gap-2">
-                            <div
-                                class="h-7 w-16 rounded-lg bg-slate-200 dark:bg-zinc-800"
-                            ></div>
-                            <div
-                                class="h-7 w-7 rounded-lg bg-slate-200 dark:bg-zinc-800"
-                            ></div>
-                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div v-else class="space-y-4">
-                <div
-                    v-for="faculty in filteredFaculties"
-                    :key="faculty.id"
-                    class="overflow-hidden rounded-xl border border-[#e3e3e0] bg-[#FDFDFC] transition dark:border-[#3E3E3A] dark:bg-[#0a0a0a]"
-                >
-                    <!-- Faculty Header -->
+                <div v-else class="space-y-4">
                     <div
-                        class="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
-                        :class="{
-                            'border-b border-[#e3e3e0] dark:border-[#3E3E3A]':
-                                expandedFaculties.includes(faculty.id),
-                        }"
+                        v-for="faculty in filteredFaculties"
+                        :key="faculty.id"
+                        class="overflow-hidden rounded-xl border border-[#e3e3e0] bg-[#FDFDFC] transition dark:border-[#3E3E3A] dark:bg-[#0a0a0a]"
                     >
-                        <div class="flex items-start gap-3">
-                            <button
-                                @click="toggleExpand(faculty.id)"
-                                class="mt-0.5 rounded-lg border border-black/5 bg-white p-1.5 text-[#706f6c] hover:text-[#1b1b18] dark:border-white/10 dark:bg-[#161615] dark:text-[#A1A09A] dark:hover:text-[#EDEDEC]"
-                            >
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke-width="1.5"
-                                    stroke="currentColor"
-                                    class="h-4 w-4 transition-transform duration-200"
-                                    :class="{
-                                        'rotate-180':
-                                            expandedFaculties.includes(
-                                                faculty.id,
-                                            ),
-                                    }"
+                        <!-- Faculty Header -->
+                        <div
+                            class="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
+                            :class="{
+                                'border-b border-[#e3e3e0] dark:border-[#3E3E3A]':
+                                    expandedFaculties.includes(faculty.id),
+                            }"
+                        >
+                            <div class="flex items-start gap-3">
+                                <button
+                                    @click="toggleExpand(faculty.id)"
+                                    class="mt-0.5 rounded-lg border border-black/5 bg-white p-1.5 text-[#706f6c] hover:text-[#1b1b18] dark:border-white/10 dark:bg-[#161615] dark:text-[#A1A09A] dark:hover:text-[#EDEDEC]"
                                 >
-                                    <path
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        d="m19.5 8.25-7.5 7.5-7.5-7.5"
-                                    />
-                                </svg>
-                            </button>
-                            <div>
-                                <div class="flex items-center gap-2">
-                                    <span
-                                        class="rounded bg-[#fff2f2] px-2 py-0.5 text-[10px] font-bold text-[#f53003] dark:bg-[#1D0002] dark:text-[#FF4433]"
-                                        >{{ faculty.code }}</span
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                        stroke-width="1.5"
+                                        stroke="currentColor"
+                                        class="h-4 w-4 transition-transform duration-200"
+                                        :class="{
+                                            'rotate-180':
+                                                expandedFaculties.includes(
+                                                    faculty.id,
+                                                ),
+                                        }"
                                     >
-                                    <h3
-                                        class="text-sm font-semibold text-[#1b1b18] dark:text-[#EDEDEC]"
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            d="m19.5 8.25-7.5 7.5-7.5-7.5"
+                                        />
+                                    </svg>
+                                </button>
+                                <div>
+                                    <div class="flex items-center gap-2">
+                                        <span
+                                            class="rounded bg-[#fff2f2] px-2 py-0.5 text-[10px] font-bold text-[#f53003] dark:bg-[#1D0002] dark:text-[#FF4433]"
+                                            >{{ faculty.code }}</span
+                                        >
+                                        <h3
+                                            class="text-sm font-semibold text-[#1b1b18] dark:text-[#EDEDEC]"
+                                        >
+                                            {{ faculty.name }}
+                                        </h3>
+                                    </div>
+                                    <p
+                                        class="mt-1 text-xs text-[#706f6c] dark:text-[#A1A09A]"
                                     >
-                                        {{ faculty.name }}
-                                    </h3>
+                                        Dekan:
+                                        <span
+                                            class="font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
+                                            >{{ faculty.dean }}</span
+                                        >
+                                    </p>
                                 </div>
-                                <p
-                                    class="mt-1 text-xs text-[#706f6c] dark:text-[#A1A09A]"
+                            </div>
+
+                            <div
+                                class="flex items-center gap-2 self-end sm:self-center"
+                            >
+                                <span
+                                    class="mr-2 text-xs font-medium text-[#706f6c] dark:text-[#A1A09A]"
+                                    >{{
+                                        faculty.studyPrograms?.length ?? 0
+                                    }}
+                                    Prodi</span
                                 >
-                                    Dekan:
-                                    <span
-                                        class="font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
-                                        >{{ faculty.dean }}</span
+                                <button
+                                    @click="openProdiModal(faculty)"
+                                    class="rounded-lg border border-[#e3e3e0] bg-white px-2.5 py-1.5 text-xs font-medium text-[#1b1b18] transition hover:bg-slate-50 dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#EDEDEC] dark:hover:bg-[#20201e]"
+                                >
+                                    + Prodi
+                                </button>
+                                <button
+                                    @click="openEditFacultyModal(faculty)"
+                                    class="rounded-lg border border-[#e3e3e0] bg-white p-1.5 text-[#706f6c] hover:text-[#f53003] dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#A1A09A] dark:hover:text-[#FF4433]"
+                                    title="Edit Fakultas"
+                                >
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                        stroke-width="1.5"
+                                        stroke="currentColor"
+                                        class="h-4 w-4"
                                     >
-                                </p>
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10"
+                                        />
+                                    </svg>
+                                </button>
+                                <button
+                                    @click="deleteFaculty(faculty.id)"
+                                    class="rounded-lg border border-[#e3e3e0] bg-white p-1.5 text-[#706f6c] hover:text-[#f53003] dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#A1A09A] dark:hover:text-[#FF4433]"
+                                    title="Hapus Fakultas"
+                                >
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                        stroke-width="1.5"
+                                        stroke="currentColor"
+                                        class="h-4 w-4"
+                                    >
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
+                                        />
+                                    </svg>
+                                </button>
                             </div>
                         </div>
 
+                        <!-- Expandable Study Programs List -->
                         <div
-                            class="flex items-center gap-2 self-end sm:self-center"
+                            v-if="expandedFaculties.includes(faculty.id)"
+                            class="bg-white/50 p-4 dark:bg-[#161615]/30"
                         >
-                            <span
-                                class="mr-2 text-xs font-medium text-[#706f6c] dark:text-[#A1A09A]"
-                                >{{
-                                    faculty.studyPrograms?.length ?? 0
-                                }}
-                                Prodi</span
+                            <div
+                                v-if="(faculty.studyPrograms?.length ?? 0) > 0"
+                                class="overflow-x-auto"
                             >
-                            <button
-                                @click="openProdiModal(faculty)"
-                                class="rounded-lg border border-[#e3e3e0] bg-white px-2.5 py-1.5 text-xs font-medium text-[#1b1b18] transition hover:bg-slate-50 dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#EDEDEC] dark:hover:bg-[#20201e]"
-                            >
-                                + Prodi
-                            </button>
-                            <button
-                                @click="openEditFacultyModal(faculty)"
-                                class="rounded-lg border border-[#e3e3e0] bg-white p-1.5 text-[#706f6c] hover:text-[#f53003] dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#A1A09A] dark:hover:text-[#FF4433]"
-                                title="Edit Fakultas"
-                            >
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke-width="1.5"
-                                    stroke="currentColor"
-                                    class="h-4 w-4"
+                                <table class="w-full text-left text-xs">
+                                    <thead>
+                                        <tr
+                                            class="border-b border-[#e3e3e0] text-[#706f6c] dark:border-[#3E3E3A] dark:text-[#A1A09A]"
+                                        >
+                                            <th
+                                                class="pb-2 font-medium uppercase tracking-wider"
+                                            >
+                                                Kode
+                                            </th>
+                                            <th
+                                                class="pb-2 font-medium uppercase tracking-wider"
+                                            >
+                                                Jenjang
+                                            </th>
+                                            <th
+                                                class="pb-2 font-medium uppercase tracking-wider"
+                                            >
+                                                Nama Program Studi
+                                            </th>
+                                            <th
+                                                class="pb-2 font-medium uppercase tracking-wider"
+                                            >
+                                                Ketua Prodi
+                                            </th>
+                                            <th
+                                                class="pb-2 text-right font-medium uppercase tracking-wider"
+                                            >
+                                                Aksi
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody
+                                        class="divide-y divide-[#e3e3e0]/50 dark:divide-[#3E3E3A]/50"
+                                    >
+                                        <tr
+                                            v-for="prodi in faculty.studyPrograms"
+                                            :key="prodi.id"
+                                            class="text-[#1b1b18] dark:text-[#EDEDEC]"
+                                        >
+                                            <td
+                                                class="py-2.5 font-mono font-semibold text-[#f53003] dark:text-[#FF4433]"
+                                            >
+                                                {{ prodi.code }}
+                                            </td>
+                                            <td class="py-2.5">
+                                                <span
+                                                    class="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                                                    >{{ prodi.degree }}</span
+                                                >
+                                            </td>
+                                            <td class="py-2.5 font-medium">
+                                                {{ prodi.name }}
+                                            </td>
+                                            <td
+                                                class="py-2.5 text-[#706f6c] dark:text-[#A1A09A]"
+                                            >
+                                                {{ prodi.head_of_program }}
+                                            </td>
+                                            <td class="py-2.5 text-right">
+                                                <div
+                                                    class="flex items-center justify-end gap-1.5"
+                                                >
+                                                    <button
+                                                        @click="
+                                                            openEditProdiModal(
+                                                                faculty,
+                                                                prodi,
+                                                            )
+                                                        "
+                                                        class="p-1 text-[#706f6c] hover:text-[#1b1b18] dark:text-[#A1A09A] dark:hover:text-[#EDEDEC]"
+                                                        title="Edit Prodi"
+                                                    >
+                                                        <svg
+                                                            xmlns="http://www.w3.org/2000/svg"
+                                                            fill="none"
+                                                            viewBox="0 0 24 24"
+                                                            stroke-width="1.5"
+                                                            stroke="currentColor"
+                                                            class="h-3.5 w-3.5"
+                                                        >
+                                                            <path
+                                                                stroke-linecap="round"
+                                                                stroke-linejoin="round"
+                                                                d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10"
+                                                            />
+                                                        </svg>
+                                                    </button>
+                                                    <button
+                                                        @click="
+                                                            deleteProdi(prodi.id)
+                                                        "
+                                                        class="p-1 text-[#706f6c] hover:text-[#f53003] dark:text-[#A1A09A] dark:hover:text-[#FF4433]"
+                                                        title="Hapus Prodi"
+                                                    >
+                                                        <svg
+                                                            xmlns="http://www.w3.org/2000/svg"
+                                                            fill="none"
+                                                            viewBox="0 0 24 24"
+                                                            stroke-width="1.5"
+                                                            stroke="currentColor"
+                                                            class="h-3.5 w-3.5"
+                                                        >
+                                                            <path
+                                                                stroke-linecap="round"
+                                                                stroke-linejoin="round"
+                                                                d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
+                                                            />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div v-else class="py-6 text-center">
+                                <p
+                                    class="text-xs text-[#706f6c] dark:text-[#A1A09A]"
                                 >
-                                    <path
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10"
-                                    />
-                                </svg>
-                            </button>
-                            <button
-                                @click="deleteFaculty(faculty.id)"
-                                class="rounded-lg border border-[#e3e3e0] bg-white p-1.5 text-[#706f6c] hover:text-[#f53003] dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#A1A09A] dark:hover:text-[#FF4433]"
-                                title="Hapus Fakultas"
-                            >
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke-width="1.5"
-                                    stroke="currentColor"
-                                    class="h-4 w-4"
-                                >
-                                    <path
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
-                                    />
-                                </svg>
-                            </button>
+                                    Belum ada program studi di fakultas ini.
+                                </p>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Expandable Study Programs List -->
                     <div
-                        v-if="expandedFaculties.includes(faculty.id)"
-                        class="bg-white/50 p-4 dark:bg-[#161615]/30"
+                        v-if="filteredFaculties.length === 0"
+                        class="rounded-xl border border-dashed border-[#e3e3e0] p-8 text-center dark:border-[#3E3E3A]"
                     >
-                        <div
-                            v-if="(faculty.studyPrograms?.length ?? 0) > 0"
-                            class="overflow-x-auto"
-                        >
-                            <table class="w-full text-left text-xs">
-                                <thead>
-                                    <tr
-                                        class="border-b border-[#e3e3e0] text-[#706f6c] dark:border-[#3E3E3A] dark:text-[#A1A09A]"
-                                    >
-                                        <th
-                                            class="pb-2 font-medium uppercase tracking-wider"
-                                        >
-                                            Kode
-                                        </th>
-                                        <th
-                                            class="pb-2 font-medium uppercase tracking-wider"
-                                        >
-                                            Jenjang
-                                        </th>
-                                        <th
-                                            class="pb-2 font-medium uppercase tracking-wider"
-                                        >
-                                            Nama Program Studi
-                                        </th>
-                                        <th
-                                            class="pb-2 font-medium uppercase tracking-wider"
-                                        >
-                                            Ketua Prodi
-                                        </th>
-                                        <th
-                                            class="pb-2 text-right font-medium uppercase tracking-wider"
-                                        >
-                                            Aksi
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody
-                                    class="divide-y divide-[#e3e3e0]/50 dark:divide-[#3E3E3A]/50"
-                                >
-                                    <tr
-                                        v-for="prodi in faculty.studyPrograms"
-                                        :key="prodi.id"
-                                        class="text-[#1b1b18] dark:text-[#EDEDEC]"
-                                    >
-                                        <td
-                                            class="py-2.5 font-mono font-semibold text-[#f53003] dark:text-[#FF4433]"
-                                        >
-                                            {{ prodi.code }}
-                                        </td>
-                                        <td class="py-2.5">
-                                            <span
-                                                class="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
-                                                >{{ prodi.degree }}</span
-                                            >
-                                        </td>
-                                        <td class="py-2.5 font-medium">
-                                            {{ prodi.name }}
-                                        </td>
-                                        <td
-                                            class="py-2.5 text-[#706f6c] dark:text-[#A1A09A]"
-                                        >
-                                            {{ prodi.head_of_program }}
-                                        </td>
-                                        <td class="py-2.5 text-right">
-                                            <div
-                                                class="flex items-center justify-end gap-1.5"
-                                            >
-                                                <button
-                                                    @click="
-                                                        openEditProdiModal(
-                                                            faculty,
-                                                            prodi,
-                                                        )
-                                                    "
-                                                    class="p-1 text-[#706f6c] hover:text-[#1b1b18] dark:text-[#A1A09A] dark:hover:text-[#EDEDEC]"
-                                                    title="Edit Prodi"
-                                                >
-                                                    <svg
-                                                        xmlns="http://www.w3.org/2000/svg"
-                                                        fill="none"
-                                                        viewBox="0 0 24 24"
-                                                        stroke-width="1.5"
-                                                        stroke="currentColor"
-                                                        class="h-3.5 w-3.5"
-                                                    >
-                                                        <path
-                                                            stroke-linecap="round"
-                                                            stroke-linejoin="round"
-                                                            d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10"
-                                                        />
-                                                    </svg>
-                                                </button>
-                                                <button
-                                                    @click="
-                                                        deleteProdi(prodi.id)
-                                                    "
-                                                    class="p-1 text-[#706f6c] hover:text-[#f53003] dark:text-[#A1A09A] dark:hover:text-[#FF4433]"
-                                                    title="Hapus Prodi"
-                                                >
-                                                    <svg
-                                                        xmlns="http://www.w3.org/2000/svg"
-                                                        fill="none"
-                                                        viewBox="0 0 24 24"
-                                                        stroke-width="1.5"
-                                                        stroke="currentColor"
-                                                        class="h-3.5 w-3.5"
-                                                    >
-                                                        <path
-                                                            stroke-linecap="round"
-                                                            stroke-linejoin="round"
-                                                            d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
-                                                        />
-                                                    </svg>
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div v-else class="py-6 text-center">
-                            <p
-                                class="text-xs text-[#706f6c] dark:text-[#A1A09A]"
-                            >
-                                Belum ada program studi di fakultas ini.
-                            </p>
-                        </div>
+                        <p class="text-xs text-[#706f6c] dark:text-[#A1A09A]">
+                            Data fakultas atau program studi tidak ditemukan.
+                        </p>
                     </div>
-                </div>
-
-                <div
-                    v-if="filteredFaculties.length === 0"
-                    class="rounded-xl border border-dashed border-[#e3e3e0] p-8 text-center dark:border-[#3E3E3A]"
-                >
-                    <p class="text-xs text-[#706f6c] dark:text-[#A1A09A]">
-                        Data fakultas atau program studi tidak ditemukan.
-                    </p>
                 </div>
             </div>
         </div>
@@ -980,3 +996,36 @@ const deleteProdi = (prodiId: number) => {
         </Transition>
     </Teleport>
 </template>
+
+<style scoped>
+@keyframes blob {
+    0%,
+    100% {
+        transform: translate(0, 0) scale(1);
+    }
+    33% {
+        transform: translate(20px, -30px) scale(1.1);
+    }
+    66% {
+        transform: translate(-15px, 15px) scale(0.95);
+    }
+}
+
+.animate-blob {
+    animation: blob 10s infinite ease-in-out;
+}
+
+.animation-delay-2000 {
+    animation-delay: 2s;
+}
+
+.animation-delay-4000 {
+    animation-delay: 4s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .animate-blob {
+        animation: none;
+    }
+}
+</style>
