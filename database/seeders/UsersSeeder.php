@@ -13,14 +13,17 @@ class UsersSeeder extends Seeder
     /**
      * Run the database seeds.
      */
-   public function run(): void
+    public function run(): void
     {
         $defaultPassword = Hash::make('password123');
 
         // Pastikan fakultas tersedia agar foreign key valid
         $fakultasTeknik = Faculty::firstOrCreate(
             ['code' => 'FT'],
-            ['name' => 'Fakultas Teknik']
+            [
+                'name' => 'Fakultas Teknik',
+                'dean' => 'Dr. Ir. Budi Santoso, M.T.',
+            ]
         );
 
         // 1. KELOMPOK ADMIN (Manajerial & Operasional)

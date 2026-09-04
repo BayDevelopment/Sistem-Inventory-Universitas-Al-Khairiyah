@@ -14,6 +14,7 @@ return new class extends Migration
             $table->id();
             $table->string('name'); // Contoh: Fakultas Teknik
             $table->string('code')->unique(); // Contoh: FT
+            $table->string('dean'); 
             $table->timestamps();
         });
     }

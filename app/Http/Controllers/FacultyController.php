@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\FacultyResource;
 use App\Models\Faculty;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -10,10 +11,13 @@ class FacultyController extends Controller
 {
     public function index()
     {
-        $faculties = Faculty::with('studyPrograms')->latest()->paginate(15);
+        $faculties = Faculty::with('studyPrograms')
+            ->latest()
+            ->paginate(15)
+            ->through(fn(Faculty $faculty) => (new FacultyResource($faculty))->resolve());
 
         return Inertia::render('Admin/MasterData/Faculties/Index', [
-            'faculties' => $faculties
+            'faculties' => $faculties,
         ]);
     }
 
@@ -29,7 +33,7 @@ class FacultyController extends Controller
 
         return redirect()->back()->with('toast', [
             'type' => 'success',
-            'message' => 'Fakultas berhasil ditambahkan'
+            'message' => 'Fakultas berhasil ditambahkan',
         ]);
     }
 
@@ -45,7 +49,7 @@ class FacultyController extends Controller
 
         return redirect()->back()->with('toast', [
             'type' => 'success',
-            'message' => 'Fakultas berhasil diperbarui'
+            'message' => 'Fakultas berhasil diperbarui',
         ]);
     }
 
@@ -55,7 +59,7 @@ class FacultyController extends Controller
 
         return redirect()->back()->with('toast', [
             'type' => 'success',
-            'message' => 'Fakultas berhasil dihapus'
+            'message' => 'Fakultas berhasil dihapus',
         ]);
     }
 }

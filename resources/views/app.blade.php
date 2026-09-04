@@ -27,6 +27,7 @@
     <meta name="twitter:image" content="{{ asset('images/og-cover.png') }}">
     {{-- ========================================================= --}}
 
+
     {{-- Inline script to detect system dark mode preference and apply it immediately --}}
     <script>
         (function() {

@@ -7,7 +7,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class StudyProgram extends Model
 {
-    protected $guarded = [];
+    protected $table = 'study_programs';
+
+    protected $fillable = [
+        'faculty_id',
+        'code',
+        'degree',
+        'name',
+        'head_of_program',
+    ];
 
     public function faculty(): BelongsTo
     {

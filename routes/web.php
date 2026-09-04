@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\FacultyController;
+use App\Http\Controllers\StudyProgramController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -35,6 +36,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
             })->name('dashboard');
 
             Route::resource('faculties', FacultyController::class)->only(['index', 'store', 'update', 'destroy']);
+
+            Route::resource('study-programs', StudyProgramController::class)->only(['store', 'update', 'destroy']);
         });
 
 
