@@ -47,8 +47,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::resource('room-inventories', RoomInventoryController::class);
 
             Route::resource('categories', ItemCategoryController::class)
-                ->only(['index', 'update', 'destroy'])
-                ->parameter('categories', 'category');
+                ->only(['index', 'store', 'update', 'destroy']);
 
             Route::resource('items', ItemController::class)
                 ->only(['index', 'store', 'update', 'destroy']);

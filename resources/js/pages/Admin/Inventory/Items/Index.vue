@@ -14,19 +14,27 @@ import {
 |--------------------------------------------------------------------------
 */
 
+// Kategori sebagaimana dikirim dari master data (item_categories)
+interface CategoryOption {
+    id: number;
+    code: string;
+    name: string;
+}
+
 interface Item {
     id: number;
     name: string;
-    category: string | null;
+    category_id: number | null;
+    // Relasi eager-loaded dari backend: Item::with('category')
+    category?: {
+        id: number;
+        code: string;
+        name: string;
+    } | null;
     description: string | null;
     room_inventories_count?: number;
     created_at?: string;
     updated_at?: string;
-}
-
-interface CategoryRow {
-    category: string;
-    items_count?: number;
 }
 
 interface PaginationLink {
@@ -54,7 +62,7 @@ interface PaginatedItems {
 
 const props = defineProps<{
     items: PaginatedItems;
-    categories?: CategoryRow[];
+    categories?: CategoryOption[];
 }>();
 
 /*
@@ -79,7 +87,7 @@ const editingItem = ref<Item | null>(null);
 
 const form = ref({
     name: "",
-    category: "",
+    category_id: null as number | null,
     description: "",
 });
 
@@ -112,8 +120,7 @@ const totalCategories = computed(() => {
 const totalAssets = computed(() => {
     return (
         props.items?.data?.reduce(
-            (total, item) =>
-                total + Number(item.room_inventories_count || 0),
+            (total, item) => total + Number(item.room_inventories_count || 0),
             0,
         ) ?? 0
     );
@@ -130,7 +137,7 @@ const filteredItems = computed(() => {
     return items.filter((item) => {
         return (
             item.name.toLowerCase().includes(query) ||
-            (item.category ?? "").toLowerCase().includes(query) ||
+            (item.category?.name ?? "").toLowerCase().includes(query) ||
             (item.description ?? "").toLowerCase().includes(query)
         );
     });
@@ -147,7 +154,7 @@ const openCreateModal = () => {
 
     form.value = {
         name: "",
-        category: "",
+        category_id: null,
         description: "",
     };
 
@@ -166,7 +173,7 @@ const openEditModal = (item: Item) => {
 
     form.value = {
         name: item.name ?? "",
-        category: item.category ?? "",
+        category_id: item.category_id ?? item.category?.id ?? null,
         description: item.description ?? "",
     };
 
@@ -190,7 +197,7 @@ const closeFormModal = () => {
 
     form.value = {
         name: "",
-        category: "",
+        category_id: null,
         description: "",
     };
 
@@ -207,7 +214,6 @@ const submitForm = () => {
     formError.value = null;
 
     const name = form.value.name.trim();
-    const category = form.value.category.trim();
     const description = form.value.description.trim();
 
     if (!name) {
@@ -216,14 +222,7 @@ const submitForm = () => {
     }
 
     if (name.length > 255) {
-        formError.value =
-            "Nama barang tidak boleh lebih dari 255 karakter.";
-        return;
-    }
-
-    if (category.length > 255) {
-        formError.value =
-            "Kategori tidak boleh lebih dari 255 karakter.";
+        formError.value = "Nama barang tidak boleh lebih dari 255 karakter.";
         return;
     }
 
@@ -231,7 +230,7 @@ const submitForm = () => {
 
     const payload = {
         name,
-        category: category || null,
+        category_id: form.value.category_id,
         description: description || null,
     };
 
@@ -246,13 +245,14 @@ const submitForm = () => {
             preserveScroll: true,
 
             onSuccess: () => {
+                isFormProcessing.value = false; // <-- Matikan loading duluan di sini
                 closeFormModal();
             },
 
             onError: (errors) => {
                 formError.value =
                     errors.name ??
-                    errors.category ??
+                    errors.category_id ??
                     errors.description ??
                     "Gagal menambahkan barang.";
             },
@@ -271,29 +271,26 @@ const submitForm = () => {
     |--------------------------------------------------------------------------
     */
 
-    router.put(
-        updateItem.url(editingItem.value.id),
-        payload,
-        {
-            preserveScroll: true,
+    router.put(updateItem.url(editingItem.value.id), payload, {
+        preserveScroll: true,
 
-            onSuccess: () => {
-                closeFormModal();
-            },
-
-            onError: (errors) => {
-                formError.value =
-                    errors.name ??
-                    errors.category ??
-                    errors.description ??
-                    "Gagal memperbarui barang.";
-            },
-
-            onFinish: () => {
-                isFormProcessing.value = false;
-            },
+        onSuccess: () => {
+            isFormProcessing.value = false; // <-- Matikan loading duluan di sini
+            closeFormModal();
         },
-    );
+
+        onError: (errors) => {
+            formError.value =
+                errors.name ??
+                errors.category_id ??
+                errors.description ??
+                "Gagal memperbarui barang.";
+        },
+
+        onFinish: () => {
+            isFormProcessing.value = false;
+        },
+    });
 };
 
 /*
@@ -342,9 +339,7 @@ const executeDelete = () => {
         preserveScroll: true,
 
         onError: (errors) => {
-            deleteError.value =
-                errors.message ??
-                "Barang gagal dihapus.";
+            deleteError.value = errors.message ?? "Barang gagal dihapus.";
         },
 
         onFinish: () => {
@@ -378,8 +373,8 @@ const goToPage = (url: string | null) => {
 |--------------------------------------------------------------------------
 */
 
-const getCategoryClass = (category: string | null) => {
-    if (!category) {
+const getCategoryClass = (categoryName: string | null | undefined) => {
+    if (!categoryName) {
         return "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-400";
     }
 
@@ -390,9 +385,7 @@ const getCategoryClass = (category: string | null) => {
 <template>
     <Head title="Master Barang - Sistem Inventory" />
 
-    <div
-        class="relative flex flex-1 flex-col gap-6 overflow-hidden p-4 md:p-6"
-    >
+    <div class="relative flex flex-1 flex-col gap-6 overflow-hidden p-4 md:p-6">
         <!-- Decorative Background -->
         <div class="pointer-events-none absolute inset-0 overflow-hidden">
             <div
@@ -416,9 +409,7 @@ const getCategoryClass = (category: string | null) => {
             <div
                 class="flex items-center gap-2 text-xs text-[#706f6c] dark:text-[#A1A09A]"
             >
-                <span
-                    class="font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
-                >
+                <span class="font-medium text-[#1b1b18] dark:text-[#EDEDEC]">
                     Master Barang
                 </span>
             </div>
@@ -434,9 +425,7 @@ const getCategoryClass = (category: string | null) => {
                         Master Barang
                     </h1>
 
-                    <p
-                        class="mt-1 text-xs text-[#706f6c] dark:text-[#A1A09A]"
-                    >
+                    <p class="mt-1 text-xs text-[#706f6c] dark:text-[#A1A09A]">
                         Kelola data master barang yang digunakan dalam sistem
                         inventaris.
                     </p>
@@ -660,9 +649,7 @@ const getCategoryClass = (category: string | null) => {
                             Daftar Barang
                         </h2>
 
-                        <p
-                            class="text-xs text-[#706f6c] dark:text-[#A1A09A]"
-                        >
+                        <p class="text-xs text-[#706f6c] dark:text-[#A1A09A]">
                             Kelola seluruh master barang.
                         </p>
                     </div>
@@ -760,11 +747,13 @@ const getCategoryClass = (category: string | null) => {
                                     <span
                                         class="rounded px-2 py-1 text-[10px] font-semibold"
                                         :class="
-                                            getCategoryClass(item.category)
+                                            getCategoryClass(
+                                                item.category?.name,
+                                            )
                                         "
                                     >
                                         {{
-                                            item.category ||
+                                            item.category?.name ||
                                             "Tanpa kategori"
                                         }}
                                     </span>
@@ -779,10 +768,7 @@ const getCategoryClass = (category: string | null) => {
                                         {{ item.description }}
                                     </span>
 
-                                    <span
-                                        v-else
-                                        class="italic text-[#a1a09a]"
-                                    >
+                                    <span v-else class="italic text-[#a1a09a]">
                                         Tidak ada deskripsi
                                     </span>
                                 </td>
@@ -792,9 +778,7 @@ const getCategoryClass = (category: string | null) => {
                                     <span
                                         class="rounded bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600 dark:bg-white/10 dark:text-slate-300"
                                     >
-                                        {{
-                                            item.room_inventories_count ?? 0
-                                        }}
+                                        {{ item.room_inventories_count ?? 0 }}
                                         aset
                                     </span>
                                 </td>
@@ -884,9 +868,7 @@ const getCategoryClass = (category: string | null) => {
                         Belum ada master barang.
                     </p>
 
-                    <p v-else>
-                        Tidak ada barang yang cocok dengan pencarian.
-                    </p>
+                    <p v-else>Tidak ada barang yang cocok dengan pencarian.</p>
                 </div>
 
                 <!-- Pagination -->
@@ -894,9 +876,7 @@ const getCategoryClass = (category: string | null) => {
                     v-if="props.items.last_page > 1"
                     class="mt-6 flex flex-col gap-3 border-t border-[#e3e3e0] pt-4 dark:border-[#3E3E3A] sm:flex-row sm:items-center sm:justify-between"
                 >
-                    <p
-                        class="text-[11px] text-[#706f6c] dark:text-[#A1A09A]"
-                    >
+                    <p class="text-[11px] text-[#706f6c] dark:text-[#A1A09A]">
                         Menampilkan
                         <strong class="text-[#1b1b18] dark:text-[#EDEDEC]">
                             {{ props.items.from ?? 0 }}
@@ -994,9 +974,7 @@ const getCategoryClass = (category: string | null) => {
                             </div>
 
                             <div class="min-w-0 flex-1">
-                                <div
-                                    class="flex items-center justify-between"
-                                >
+                                <div class="flex items-center justify-between">
                                     <div>
                                         <h3
                                             class="text-base font-semibold text-[#1b1b18] dark:text-[#EDEDEC]"
@@ -1067,7 +1045,7 @@ const getCategoryClass = (category: string | null) => {
                                         />
                                     </div>
 
-                                    <!-- Category -->
+                                    <!-- Category (select, bukan text input lagi) -->
                                     <div>
                                         <label
                                             class="mb-1.5 block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
@@ -1075,29 +1053,34 @@ const getCategoryClass = (category: string | null) => {
                                             Kategori
                                         </label>
 
-                                        <input
-                                            v-model="form.category"
-                                            type="text"
-                                            maxlength="255"
+                                        <select
+                                            v-model="form.category_id"
                                             :disabled="isFormProcessing"
-                                            autocomplete="off"
-                                            placeholder="Contoh: Mebel"
-                                            list="item-categories"
-                                            class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2.5 text-xs text-[#1b1b18] placeholder-[#a1a09a] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] disabled:cursor-not-allowed disabled:bg-slate-100 dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433] dark:disabled:bg-white/5"
-                                        />
+                                            class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2.5 text-xs text-[#1b1b18] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] disabled:cursor-not-allowed disabled:bg-slate-100 dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433] dark:disabled:bg-white/5"
+                                        >
+                                            <option :value="null">
+                                                Tanpa kategori
+                                            </option>
 
-                                        <datalist id="item-categories">
                                             <option
                                                 v-for="category in props.categories"
-                                                :key="category.category"
-                                                :value="category.category"
-                                            />
-                                        </datalist>
+                                                :key="category.id"
+                                                :value="category.id"
+                                            >
+                                                {{ category.name }}
+                                            </option>
+                                        </select>
 
                                         <p
                                             class="mt-1 text-[10px] text-[#706f6c] dark:text-[#A1A09A]"
                                         >
-                                            Contoh: Mebel, Elektronik, ATK.
+                                            Kelola daftar kategori di halaman
+                                            <Link
+                                                href="/admin/categories"
+                                                class="text-[#f53003] hover:underline dark:text-[#FF4433]"
+                                            >
+                                                Kategori Barang </Link
+                                            >.
                                         </p>
                                     </div>
 
@@ -1187,9 +1170,7 @@ const getCategoryClass = (category: string | null) => {
             </Transition>
         </Teleport>
 
-        <!-- ============================================================= -->
         <!-- DELETE MODAL -->
-        <!-- ============================================================= -->
 
         <Teleport to="body">
             <Transition

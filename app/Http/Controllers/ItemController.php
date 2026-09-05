@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\ItemRequest;
 use App\Models\Item;
+use App\Models\ItemCategory;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -12,13 +13,16 @@ class ItemController extends Controller
 {
     public function index(): Response
     {
-        $items = Item::withCount('roomInventories')
+        $items = Item::with('category')
+            ->withCount('roomInventories')
             ->orderBy('name')
             ->paginate(15);
 
         return Inertia::render('Admin/Inventory/Items/Index', [
             'items' => $items,
-            'categories' => Item::listCategories(),
+            'categories' => ItemCategory::select(['id', 'code', 'name'])
+                ->orderBy('name')
+                ->get(),
         ]);
     }
 

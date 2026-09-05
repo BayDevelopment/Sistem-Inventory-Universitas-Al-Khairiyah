@@ -26,6 +26,16 @@ class ItemCategoryController extends Controller
         );
     }
 
+    public function store(ItemCategoryRequest $request): RedirectResponse
+    {
+        ItemCategory::create($request->validated());
+
+        return redirect()->back()->with('toast', [
+            'type' => 'success',
+            'message' => 'Kategori berhasil ditambahkan.',
+        ]);
+    }
+
     public function update(
         ItemCategoryRequest $request,
         ItemCategory $category

@@ -23,14 +23,24 @@ class ItemCategoryRequest extends FormRequest
      */
     public function rules(): array
     {
-        $currentCategory = $this->route('category');
+       // Ambil ID kategori saat ini jika sedang proses update (route parameter-nya biasanya 'category')
+        $categoryId = $this->route('category');
 
         return [
-            'category' => [
+            'code' => [
+                'required',
+                'string',
+                'max:50',
+                Rule::unique('item_categories', 'code')->ignore($categoryId),
+            ],
+            'name' => [
                 'required',
                 'string',
                 'max:255',
-                Rule::unique('items', 'category')->ignore($currentCategory, 'category'),
+            ],
+            'description' => [
+                'nullable',
+                'string',
             ],
         ];
     }

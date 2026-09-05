@@ -3,6 +3,7 @@ import { ref, computed } from "vue";
 import { Head, Link, router } from "@inertiajs/vue3";
 
 import {
+    store as storeCategory,
     update as updateCategory,
     destroy as destroyCategory,
 } from "@/actions/App/Http/Controllers/ItemCategoryController";
@@ -33,11 +34,34 @@ const props = defineProps<{
 
 /*
 |--------------------------------------------------------------------------
-| State
+| State - Search
 |--------------------------------------------------------------------------
 */
 
 const searchQuery = ref("");
+
+/*
+|--------------------------------------------------------------------------
+| State - Create Modal
+|--------------------------------------------------------------------------
+*/
+
+const isCreateModalOpen = ref(false);
+const isCreateProcessing = ref(false);
+
+const createForm = ref({
+    code: "",
+    name: "",
+    description: "",
+});
+
+const createErrors = ref<Record<string, string>>({});
+
+/*
+|--------------------------------------------------------------------------
+| State - Edit Modal
+|--------------------------------------------------------------------------
+*/
 
 const isEditModalOpen = ref(false);
 const isEditProcessing = ref(false);
@@ -50,6 +74,12 @@ const editForm = ref({
 });
 
 const editErrors = ref<Record<string, string>>({});
+
+/*
+|--------------------------------------------------------------------------
+| State - Confirm Delete Modal
+|--------------------------------------------------------------------------
+*/
 
 const isConfirmModalOpen = ref(false);
 const confirmTitle = ref("Konfirmasi Penghapusan");
@@ -87,6 +117,90 @@ const filteredCategories = computed(() => {
         );
     });
 });
+
+/*
+|--------------------------------------------------------------------------
+| Create Category
+|--------------------------------------------------------------------------
+*/
+
+const openCreateModal = () => {
+    createForm.value = {
+        code: "",
+        name: "",
+        description: "",
+    };
+
+    createErrors.value = {};
+    isCreateModalOpen.value = true;
+};
+
+const closeCreateModal = () => {
+    if (isCreateProcessing.value) {
+        return;
+    }
+
+    isCreateModalOpen.value = false;
+
+    createForm.value = {
+        code: "",
+        name: "",
+        description: "",
+    };
+
+    createErrors.value = {};
+};
+
+const handleCreateSubmit = () => {
+    const code = createForm.value.code.trim();
+    const name = createForm.value.name.trim();
+    const description = createForm.value.description.trim();
+
+    createErrors.value = {};
+
+    if (!code) {
+        createErrors.value.code = "Kode kategori wajib diisi.";
+    }
+
+    if (!name) {
+        createErrors.value.name = "Nama kategori wajib diisi.";
+    }
+
+    if (Object.keys(createErrors.value).length > 0) {
+        return;
+    }
+
+    isCreateProcessing.value = true;
+
+   router.post(
+        storeCategory.url(),
+        {
+            code,
+            name,
+            description: description || null,
+        },
+        {
+            preserveScroll: true,
+
+            onSuccess: () => {
+                isCreateProcessing.value = false; // Matikan loading agar fungsi close bisa berjalan
+                closeCreateModal();
+            },
+
+            onError: (errors) => {
+                createErrors.value = {
+                    code: errors.code ?? "",
+                    name: errors.name ?? "",
+                    description: errors.description ?? "",
+                };
+            },
+
+            onFinish: () => {
+                isCreateProcessing.value = false;
+            },
+        },
+    );
+};
 
 /*
 |--------------------------------------------------------------------------
@@ -149,7 +263,7 @@ const handleEditSubmit = () => {
 
     isEditProcessing.value = true;
 
-    router.put(
+   router.put(
         updateCategory.url(editingCategory.value.id),
         {
             code,
@@ -160,6 +274,7 @@ const handleEditSubmit = () => {
             preserveScroll: true,
 
             onSuccess: () => {
+                isEditProcessing.value = false; // Matikan loading agar fungsi close bisa berjalan
                 closeEditModal();
             },
 
@@ -293,6 +408,49 @@ const executeDelete = () => {
                 >
                     Kategori Barang
                 </span>
+            </div>
+
+            <!-- Header -->
+            <div
+                class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+            >
+                <div>
+                    <h1
+                        class="text-2xl font-bold tracking-tight text-[#1b1b18] dark:text-[#EDEDEC]"
+                    >
+                        Kategori Barang
+                    </h1>
+
+                    <p
+                        class="mt-1 text-xs text-[#706f6c] dark:text-[#A1A09A]"
+                    >
+                        Kelola master kategori yang digunakan oleh Barang.
+                    </p>
+                </div>
+
+                <!-- Add -->
+                <button
+                    type="button"
+                    @click="openCreateModal"
+                    class="flex w-fit items-center gap-2 rounded-lg bg-[#f53003] px-4 py-2.5 text-xs font-medium text-white shadow-sm transition hover:bg-[#d92900] dark:bg-[#FF4433] dark:hover:bg-[#e03b2b]"
+                >
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke-width="1.5"
+                        stroke="currentColor"
+                        class="h-4 w-4"
+                    >
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            d="M12 4.5v15m7.5-7.5h-15"
+                        />
+                    </svg>
+
+                    Tambah Kategori
+                </button>
             </div>
 
             <!-- STATS -->
@@ -636,6 +794,216 @@ const executeDelete = () => {
                         ini.
                     </p>
                 </div>
+            </div>
+        </div>
+
+        <!-- ================================================================ -->
+        <!-- CREATE CATEGORY MODAL -->
+        <!-- ================================================================ -->
+
+        <div
+            v-if="isCreateModalOpen"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+        >
+            <div
+                class="w-full max-w-md rounded-2xl border border-black/5 bg-white p-6 shadow-xl dark:border-white/10 dark:bg-[#161615]"
+            >
+                <!-- Header -->
+                <div
+                    class="flex items-center justify-between border-b border-[#e3e3e0] pb-4 dark:border-[#3E3E3A]"
+                >
+                    <div class="flex items-start gap-3">
+                        <div
+                            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#fff2f2] text-[#f53003] dark:bg-[#1D0002] dark:text-[#FF4433]"
+                        >
+                            <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke-width="1.5"
+                                stroke="currentColor"
+                                class="h-4.5 w-4.5"
+                            >
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    d="M12 4.5v15m7.5-7.5h-15"
+                                />
+                            </svg>
+                        </div>
+
+                        <div>
+                            <h3
+                                class="text-base font-semibold text-[#1b1b18] dark:text-[#EDEDEC]"
+                            >
+                                Tambah Kategori
+                            </h3>
+
+                            <p
+                                class="mt-0.5 text-[11px] text-[#706f6c] dark:text-[#A1A09A]"
+                            >
+                                Tambahkan kategori baru ke master data.
+                            </p>
+                        </div>
+                    </div>
+
+                    <button
+                        type="button"
+                        @click="closeCreateModal"
+                        :disabled="isCreateProcessing"
+                        class="rounded-lg p-1 text-[#706f6c] hover:bg-slate-100 hover:text-[#1b1b18] disabled:opacity-50 dark:text-[#A1A09A] dark:hover:bg-[#20201e] dark:hover:text-[#EDEDEC]"
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke-width="1.5"
+                            stroke="currentColor"
+                            class="h-5 w-5"
+                        >
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                d="M6 18 18 6M6 6l12 12"
+                            />
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Form -->
+                <form
+                    @submit.prevent="handleCreateSubmit"
+                    class="mt-5 space-y-4"
+                >
+                    <!-- Code -->
+                    <div>
+                        <label
+                            class="mb-1 block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
+                        >
+                            Kode Kategori
+                            <span class="text-red-500">*</span>
+                        </label>
+
+                        <input
+                            v-model="createForm.code"
+                            type="text"
+                            required
+                            maxlength="255"
+                            :disabled="isCreateProcessing"
+                            autocomplete="off"
+                            placeholder="Contoh: ELK"
+                            class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2 text-xs text-[#1b1b18] placeholder-[#a1a09a] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] disabled:cursor-not-allowed disabled:bg-slate-100 dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433] dark:disabled:bg-white/5"
+                        />
+
+                        <p
+                            v-if="createErrors.code"
+                            class="mt-1 text-[11px] font-medium text-red-600 dark:text-red-400"
+                        >
+                            {{ createErrors.code }}
+                        </p>
+                    </div>
+
+                    <!-- Name -->
+                    <div>
+                        <label
+                            class="mb-1 block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
+                        >
+                            Nama Kategori
+                            <span class="text-red-500">*</span>
+                        </label>
+
+                        <input
+                            v-model="createForm.name"
+                            type="text"
+                            required
+                            maxlength="255"
+                            :disabled="isCreateProcessing"
+                            autocomplete="off"
+                            placeholder="Contoh: Elektronik"
+                            class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2 text-xs text-[#1b1b18] placeholder-[#a1a09a] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] disabled:cursor-not-allowed disabled:bg-slate-100 dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433] dark:disabled:bg-white/5"
+                        />
+
+                        <p
+                            v-if="createErrors.name"
+                            class="mt-1 text-[11px] font-medium text-red-600 dark:text-red-400"
+                        >
+                            {{ createErrors.name }}
+                        </p>
+                    </div>
+
+                    <!-- Description -->
+                    <div>
+                        <label
+                            class="mb-1 block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
+                        >
+                            Deskripsi
+                        </label>
+
+                        <textarea
+                            v-model="createForm.description"
+                            rows="4"
+                            :disabled="isCreateProcessing"
+                            placeholder="Deskripsi kategori..."
+                            class="w-full resize-none rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2 text-xs text-[#1b1b18] placeholder-[#a1a09a] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] disabled:cursor-not-allowed disabled:bg-slate-100 dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433] dark:disabled:bg-white/5"
+                        ></textarea>
+
+                        <p
+                            v-if="createErrors.description"
+                            class="mt-1 text-[11px] font-medium text-red-600 dark:text-red-400"
+                        >
+                            {{ createErrors.description }}
+                        </p>
+                    </div>
+
+                    <!-- Footer -->
+                    <div
+                        class="mt-6 flex items-center justify-end gap-2 border-t border-[#e3e3e0] pt-4 dark:border-[#3E3E3A]"
+                    >
+                        <button
+                            type="button"
+                            @click="closeCreateModal"
+                            :disabled="isCreateProcessing"
+                            class="rounded-lg border border-[#e3e3e0] bg-white px-4 py-2 text-xs font-medium text-[#1b1b18] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#EDEDEC] dark:hover:bg-[#20201e]"
+                        >
+                            Batal
+                        </button>
+
+                        <button
+                            type="submit"
+                            :disabled="isCreateProcessing"
+                            class="flex items-center gap-2 rounded-lg bg-[#f53003] px-4 py-2 text-xs font-medium text-white transition hover:bg-[#d92900] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-[#FF4433] dark:hover:bg-[#e03b2b]"
+                        >
+                            <svg
+                                v-if="isCreateProcessing"
+                                class="h-3.5 w-3.5 animate-spin"
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                            >
+                                <circle
+                                    class="opacity-25"
+                                    cx="12"
+                                    cy="12"
+                                    r="10"
+                                    stroke="currentColor"
+                                    stroke-width="4"
+                                />
+
+                                <path
+                                    class="opacity-75"
+                                    fill="currentColor"
+                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                />
+                            </svg>
+
+                            {{
+                                isCreateProcessing
+                                    ? "Menyimpan..."
+                                    : "Tambah Kategori"
+                            }}
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
 
