@@ -10,9 +10,7 @@ class Room extends Model
 {
     protected $guarded = [];
 
-    protected $casts = [
-        'is_active' => 'boolean',
-    ];
+    protected $casts = ['is_active' => 'boolean',];
 
     public function faculty(): BelongsTo
     {
@@ -23,7 +21,7 @@ class Room extends Model
     {
         return $this->hasMany(RoomInventory::class);
     }
-
+    
     public function procurements(): HasMany
     {
         return $this->hasMany(Procurement::class);

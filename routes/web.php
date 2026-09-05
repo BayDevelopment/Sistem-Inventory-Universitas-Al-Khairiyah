@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\FacultyController;
+use App\Http\Controllers\ItemCategoryController;
+use App\Http\Controllers\ItemController;
 use App\Http\Controllers\RoomController;
 use App\Http\Controllers\RoomInventoryController;
 use App\Http\Controllers\StudyProgramController;
@@ -43,6 +45,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
             Route::resource('rooms', RoomController::class);
             Route::resource('room-inventories', RoomInventoryController::class);
+
+            Route::resource('categories', ItemCategoryController::class)
+                ->only(['index', 'update', 'destroy'])
+                ->parameter('categories', 'category');
+
+            Route::resource('items', ItemController::class)
+                ->only(['index', 'store', 'update', 'destroy']);
         });
 
 
