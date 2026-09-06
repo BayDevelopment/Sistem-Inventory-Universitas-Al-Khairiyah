@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\FacultyResource;
 use App\Models\Faculty;
+use App\Models\RoomType;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -14,10 +15,22 @@ class FacultyController extends Controller
         $faculties = Faculty::with('studyPrograms')
             ->latest()
             ->paginate(15)
-            ->through(fn(Faculty $faculty) => (new FacultyResource($faculty))->resolve());
+            ->through(
+                fn(Faculty $faculty) => (new FacultyResource($faculty))->resolve()
+            );
+
+        $roomTypes = RoomType::query()
+            ->orderBy('name')
+            ->get([
+                'id',
+                'name',
+                'slug',
+                'description',
+            ]);
 
         return Inertia::render('Admin/MasterData/Faculties/Index', [
             'faculties' => $faculties,
+            'roomTypes' => $roomTypes,
         ]);
     }
 

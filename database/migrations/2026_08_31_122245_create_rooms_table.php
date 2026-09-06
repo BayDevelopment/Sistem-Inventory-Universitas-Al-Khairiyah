@@ -14,12 +14,14 @@ return new class extends Migration
         Schema::create('rooms', function (Blueprint $table) {
             $table->id();
             $table->foreignId('faculty_id')->constrained('faculties')->onDelete('cascade');
+
+            $table->foreignId('room_type_id')->constrained('room_types')->onDelete('restrict');
+
             $table->string('code')->unique();
             $table->string('name');
-            $table->enum('type', ['kelas', 'lab_komputer', 'ruang_dosen', 'ruang_akademik'])->default('kelas');
             $table->string('building')->nullable();
             $table->string('floor')->nullable();
-            $table->string('building_floor')->nullable(); // Cadangan jika masih dipakai di frontend/view lama
+            $table->string('building_floor')->nullable();
             $table->text('description')->nullable();
             $table->boolean('is_active')->default(true);
             $table->timestamps();

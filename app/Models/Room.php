@@ -8,22 +8,34 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Room extends Model
 {
-    protected $guarded = [];
-
-    protected $casts = ['is_active' => 'boolean',];
+     protected $guarded = [];
 
     public function faculty(): BelongsTo
     {
         return $this->belongsTo(Faculty::class);
     }
 
+    public function roomType(): BelongsTo
+    {
+        return $this->belongsTo(
+            RoomType::class,
+            'room_type_id'
+        );
+    }
+
     public function inventories(): HasMany
     {
-        return $this->hasMany(RoomInventory::class);
+        return $this->hasMany(
+            RoomInventory::class,
+            'room_id'
+        );
     }
-    
+
     public function procurements(): HasMany
     {
-        return $this->hasMany(Procurement::class);
+        return $this->hasMany(
+            Procurement::class,
+            'room_id'
+        );
     }
 }

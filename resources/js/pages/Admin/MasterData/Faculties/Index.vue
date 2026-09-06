@@ -4,6 +4,7 @@ import { Head, router } from "@inertiajs/vue3";
 
 import FacultyFormModal from "./FacultyFormModal.vue";
 import StudyProgramModal from "./StudyProgramModal.vue";
+import RoomTypeFormModal from "./RoomTypeFormModal.vue";
 
 import {
     store as storeFaculty,
@@ -16,6 +17,11 @@ import {
     update as updateProdi,
     destroy as destroyProdi,
 } from "@/actions/App/Http/Controllers/StudyProgramController";
+
+import {
+    store as storeRoomType,
+    update as updateRoomType,
+} from "@/actions/App/Http/Controllers/RoomTypeController";
 
 /*
 |--------------------------------------------------------------------------
@@ -49,8 +55,21 @@ interface PaginatedFaculties {
 
 const props = defineProps<{
     faculties: PaginatedFaculties;
+    roomTypes?: RoomType[];
 }>();
 
+interface RoomType {
+    id: number;
+    name: string;
+    slug: string;
+    description: string | null;
+    rooms_count?: number;
+}
+
+const isRoomTypeModalOpen = ref(false);
+const editingRoomType = ref<RoomType | null>(null);
+const isRoomTypeProcessing = ref(false);
+const roomTypeCount = computed(() => props.roomTypes?.length ?? 0);
 const isLoading = ref(false);
 const searchQuery = ref("");
 const expandedFaculties = ref<number[]>([]);
@@ -78,6 +97,74 @@ const totalStudyPrograms = computed(() =>
         0,
     ),
 );
+
+const openCreateRoomTypeModal = () => {
+    editingRoomType.value = null;
+    isRoomTypeModalOpen.value = true;
+};
+
+const openEditRoomTypeModal = (roomType: RoomType) => {
+    editingRoomType.value = {
+        id: roomType.id,
+        name: roomType.name ?? "",
+        slug: roomType.slug ?? "",
+        description: roomType.description ?? "",
+    };
+
+    isRoomTypeModalOpen.value = true;
+};
+
+const closeRoomTypeModal = () => {
+    isRoomTypeModalOpen.value = false;
+    editingRoomType.value = null;
+    isRoomTypeProcessing.value = false;
+};
+
+const handleSaveRoomType = (data: {
+    name: string;
+    slug: string;
+    description?: string | null;
+}) => {
+    isRoomTypeProcessing.value = true;
+
+    // EDIT
+    if (editingRoomType.value) {
+        router.put(updateRoomType.url(editingRoomType.value.id), data, {
+            preserveScroll: true,
+
+            onSuccess: () => {
+                closeRoomTypeModal();
+            },
+
+            onError: (errors) => {
+                console.error("Gagal update Jenis Ruangan:", errors);
+            },
+
+            onFinish: () => {
+                isRoomTypeProcessing.value = false;
+            },
+        });
+
+        return;
+    }
+
+    // CREATE
+    router.post(storeRoomType.url(), data, {
+        preserveScroll: true,
+
+        onSuccess: () => {
+            closeRoomTypeModal();
+        },
+
+        onError: (errors) => {
+            console.error("Gagal menyimpan Jenis Ruangan:", errors);
+        },
+
+        onFinish: () => {
+            isRoomTypeProcessing.value = false;
+        },
+    });
+};
 
 const filteredFaculties = computed(() => {
     if (!searchQuery.value) {
@@ -330,7 +417,9 @@ const deleteProdi = (prodiId: number) => {
         </div>
 
         <!-- Wrapper konten asli, di atas blob -->
-        <div class="relative z-10 flex flex-1 flex-col gap-6 opacity-100 transition-opacity duration-750 starting:opacity-0">
+        <div
+            class="relative z-10 flex flex-1 flex-col gap-6 opacity-100 transition-opacity duration-750 starting:opacity-0"
+        >
             <!-- STATS CARDS -->
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <template v-if="isLoading">
@@ -481,6 +570,19 @@ const deleteProdi = (prodiId: number) => {
                             >
                                 <span>+ Tambah Fakultas Baru</span>
                             </button>
+
+                            <button
+                                @click="openCreateRoomTypeModal"
+                                class="flex w-full items-center justify-center gap-2 rounded-lg border border-[#e3e3e0] bg-white px-3 py-2 text-xs font-medium text-[#1b1b18] transition hover:bg-slate-50 dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#EDEDEC] dark:hover:bg-[#20201e]"
+                            >
+                                <span>+ Tambah Jenis Ruangan</span>
+
+                                <span
+                                    class="inline-flex min-w-[20px] items-center justify-center rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                                >
+                                    {{ roomTypeCount }}
+                                </span>
+                            </button>
                         </div>
                     </div>
                 </template>
@@ -513,7 +615,9 @@ const deleteProdi = (prodiId: number) => {
                             >
                                 Master Data Fakultas & Program Studi
                             </h2>
-                            <p class="text-xs text-[#706f6c] dark:text-[#A1A09A]">
+                            <p
+                                class="text-xs text-[#706f6c] dark:text-[#A1A09A]"
+                            >
                                 Kelola struktur unit fakultas dan jurusan di
                                 lingkungan kampus.
                             </p>
@@ -802,7 +906,9 @@ const deleteProdi = (prodiId: number) => {
                                                     </button>
                                                     <button
                                                         @click="
-                                                            deleteProdi(prodi.id)
+                                                            deleteProdi(
+                                                                prodi.id,
+                                                            )
                                                         "
                                                         class="p-1 text-[#706f6c] hover:text-[#f53003] dark:text-[#A1A09A] dark:hover:text-[#FF4433]"
                                                         title="Hapus Prodi"
@@ -869,6 +975,15 @@ const deleteProdi = (prodiId: number) => {
         :errors="$page.props.errors"
         @close="closeProdiModal"
         @submit="handleSaveProdi"
+    />
+
+    <RoomTypeFormModal
+        :show="isRoomTypeModalOpen"
+        :room-type="editingRoomType"
+        :processing="isRoomTypeProcessing"
+        :errors="$page.props.errors"
+        @close="closeRoomTypeModal"
+        @submit="handleSaveRoomType"
     />
 
     <!-- Confirmation Modal -->

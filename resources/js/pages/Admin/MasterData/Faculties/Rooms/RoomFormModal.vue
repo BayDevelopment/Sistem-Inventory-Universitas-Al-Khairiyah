@@ -1,4 +1,3 @@
-```vue
 <script setup lang="ts">
 import { ref, watch } from "vue";
 
@@ -8,18 +7,18 @@ interface Faculty {
     name: string;
 }
 
+interface RoomType {
+    id: number;
+    name: string;
+    slug: string;
+}
+
 interface Room {
     id?: number;
     faculty_id: number | string;
+    room_type_id: number | string;
     code: string;
     name: string;
-
-    type:
-        | "kelas"
-        | "lab_komputer"
-        | "ruang_dosen"
-        | "ruang_akademik";
-
     building: string | null;
     floor: string | null;
     building_floor: string | null;
@@ -33,6 +32,8 @@ const props = defineProps<{
     show: boolean;
     room?: Room | null;
     faculties: Faculty[];
+    roomTypes: RoomType[];
+    processing?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -42,9 +43,9 @@ const emit = defineEmits<{
 
 const emptyForm = (): RoomFormData => ({
     faculty_id: "",
+    room_type_id: "",
     code: "",
     name: "",
-    type: "kelas",
     building: "",
     floor: "",
     building_floor: "",
@@ -54,41 +55,130 @@ const emptyForm = (): RoomFormData => ({
 
 const form = ref<RoomFormData>(emptyForm());
 
+const errorMessage = ref("");
+
+const syncForm = (room: Room | null | undefined) => {
+    form.value = room
+        ? {
+              faculty_id: room.faculty_id ?? "",
+              room_type_id: room.room_type_id ?? "",
+              code: room.code ?? "",
+              name: room.name ?? "",
+              building: room.building ?? "",
+              floor: room.floor ?? "",
+              building_floor: room.building_floor ?? "",
+              description: room.description ?? "",
+              is_active: room.is_active ?? true,
+          }
+        : emptyForm();
+};
+
 watch(
     () => props.room,
     (newVal) => {
-        if (newVal) {
-            form.value = {
-                faculty_id: newVal.faculty_id,
-                code: newVal.code,
-                name: newVal.name,
-
-                type: newVal.type ?? "kelas",
-
-                building: newVal.building || "",
-                floor: newVal.floor || "",
-                building_floor: newVal.building_floor || "",
-
-                description: newVal.description || "",
-                is_active: newVal.is_active ?? true,
-            };
-        } else {
-            form.value = emptyForm();
-        }
+        errorMessage.value = "";
+        syncForm(newVal);
     },
     {
         immediate: true,
     },
 );
 
+/*
+|--------------------------------------------------------------------------
+| WATCH MODAL
+|--------------------------------------------------------------------------
+| Setiap modal dibuka, selalu sinkronkan ulang dari props.room saat itu.
+| Ini mencegah form "nyangkut" menampilkan editan yang dibatalkan
+| ketika room yang sama dibuka untuk diedit lagi (reference-nya tidak
+| berubah sehingga watcher di atas tidak retrigger).
+|--------------------------------------------------------------------------
+*/
+
+watch(
+    () => props.show,
+    (isOpen) => {
+        if (isOpen) {
+            errorMessage.value = "";
+            syncForm(props.room);
+        }
+    },
+);
+
 const handleSubmit = () => {
-    emit("submit", {
-        ...form.value,
-        building_floor: form.value.building_floor?.trim() || null,
-    });
+    if (props.processing) {
+        return;
+    }
+
+    errorMessage.value = "";
+
+    const facultyId = Number(form.value.faculty_id);
+    const roomTypeId = Number(form.value.room_type_id);
+
+    const code = String(form.value.code ?? "").trim();
+    const name = String(form.value.name ?? "").trim();
+
+    if (!facultyId) {
+        errorMessage.value =
+            "Silakan pilih Fakultas terlebih dahulu.";
+        return;
+    }
+
+    if (!roomTypeId) {
+        errorMessage.value =
+            "Silakan pilih Jenis Ruangan terlebih dahulu.";
+        return;
+    }
+
+    if (!code) {
+        errorMessage.value =
+            "Kode Ruangan wajib diisi.";
+        return;
+    }
+
+    if (!name) {
+        errorMessage.value =
+            "Nama Ruangan wajib diisi.";
+        return;
+    }
+
+    const payload: RoomFormData = {
+        faculty_id: facultyId,
+        room_type_id: roomTypeId,
+
+        code,
+        name,
+
+        building:
+            String(form.value.building ?? "").trim() || null,
+
+        floor:
+            String(form.value.floor ?? "").trim() || null,
+
+        building_floor:
+            String(form.value.building_floor ?? "").trim() || null,
+
+        description:
+            String(form.value.description ?? "").trim() || null,
+
+        is_active: Boolean(form.value.is_active),
+    };
+
+    console.log("=================================");
+    console.log("ROOM FORM SUBMIT");
+    console.log("ROOM ID:", props.room?.id ?? "NEW");
+    console.log("ROOM PAYLOAD:", payload);
+    console.log("=================================");
+
+    emit("submit", payload);
 };
 
 const handleClose = () => {
+    if (props.processing) {
+        return;
+    }
+
+    errorMessage.value = "";
     emit("close");
 };
 </script>
@@ -96,12 +186,11 @@ const handleClose = () => {
 <template>
     <div
         v-if="show"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm transition-opacity"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
     >
         <div
             class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-black/5 bg-white p-6 shadow-xl dark:border-white/10 dark:bg-[#161615]"
         >
-            <!-- HEADER -->
             <div
                 class="flex items-center justify-between border-b border-[#e3e3e0] pb-4 dark:border-[#3E3E3A]"
             >
@@ -114,7 +203,8 @@ const handleClose = () => {
                 <button
                     type="button"
                     @click="handleClose"
-                    class="rounded-lg p-1 text-[#706f6c] hover:bg-slate-100 hover:text-[#1b1b18] dark:text-[#A1A09A] dark:hover:bg-[#20201e] dark:hover:text-[#EDEDEC]"
+                    :disabled="processing"
+                    class="rounded-lg p-1 text-[#706f6c] transition hover:bg-slate-100 hover:text-[#1b1b18] disabled:cursor-not-allowed disabled:opacity-50 dark:text-[#A1A09A] dark:hover:bg-[#20201e] dark:hover:text-[#EDEDEC]"
                 >
                     <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -134,10 +224,16 @@ const handleClose = () => {
             </div>
 
             <form
-                @submit.prevent="handleSubmit"
                 class="mt-4 space-y-4"
+                @submit.prevent="handleSubmit"
             >
-                <!-- FAKULTAS -->
+                <div
+                    v-if="errorMessage"
+                    class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400"
+                >
+                    {{ errorMessage }}
+                </div>
+
                 <div>
                     <label
                         class="mb-1 block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
@@ -147,11 +243,10 @@ const handleClose = () => {
 
                     <select
                         v-model="form.faculty_id"
-                        required
                         :disabled="faculties.length === 0"
                         class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2 text-xs text-[#1b1b18] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433] dark:disabled:bg-white/5 dark:disabled:text-[#5c5c58]"
                     >
-                        <option value="" disabled>
+                        <option value="">
                             {{
                                 faculties.length === 0
                                     ? "Belum ada data Fakultas"
@@ -172,11 +267,10 @@ const handleClose = () => {
                         v-if="faculties.length === 0"
                         class="mt-1 text-[11px] font-medium text-amber-600 dark:text-amber-500"
                     >
-                        Silahkan input data Fakultas terlebih dahulu.
+                        Silakan input data Fakultas terlebih dahulu.
                     </p>
                 </div>
 
-                <!-- KODE + NAMA -->
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label
@@ -189,7 +283,6 @@ const handleClose = () => {
                             v-model="form.code"
                             type="text"
                             placeholder="Contoh: LAB-01"
-                            required
                             class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2 text-xs text-[#1b1b18] placeholder-[#a1a09a] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433]"
                         />
                     </div>
@@ -205,13 +298,11 @@ const handleClose = () => {
                             v-model="form.name"
                             type="text"
                             placeholder="Contoh: Lab Komputer"
-                            required
                             class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2 text-xs text-[#1b1b18] placeholder-[#a1a09a] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433]"
                         />
                     </div>
                 </div>
 
-                <!-- TYPE -->
                 <div>
                     <label
                         class="mb-1 block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
@@ -220,29 +311,35 @@ const handleClose = () => {
                     </label>
 
                     <select
-                        v-model="form.type"
-                        required
-                        class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2 text-xs text-[#1b1b18] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433]"
+                        v-model="form.room_type_id"
+                        :disabled="roomTypes.length === 0"
+                        class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2 text-xs text-[#1b1b18] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433] dark:disabled:bg-white/5 dark:disabled:text-[#5c5c58]"
                     >
-                        <option value="kelas">
-                            Kelas
+                        <option value="">
+                            {{
+                                roomTypes.length === 0
+                                    ? "Belum ada Jenis Ruangan"
+                                    : "-- Pilih Jenis Ruangan --"
+                            }}
                         </option>
 
-                        <option value="lab_komputer">
-                            Laboratorium Komputer
-                        </option>
-
-                        <option value="ruang_dosen">
-                            Ruang Dosen
-                        </option>
-
-                        <option value="ruang_akademik">
-                            Ruang Akademik
+                        <option
+                            v-for="roomType in roomTypes"
+                            :key="roomType.id"
+                            :value="roomType.id"
+                        >
+                            {{ roomType.name }}
                         </option>
                     </select>
+
+                    <p
+                        v-if="roomTypes.length === 0"
+                        class="mt-1 text-[11px] font-medium text-amber-600 dark:text-amber-500"
+                    >
+                        Silakan input data Jenis Ruangan terlebih dahulu.
+                    </p>
                 </div>
 
-                <!-- GEDUNG + LANTAI -->
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label
@@ -281,7 +378,6 @@ const handleClose = () => {
                     </div>
                 </div>
 
-                <!-- BUILDING FLOOR -->
                 <div>
                     <label
                         class="mb-1 block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
@@ -302,12 +398,10 @@ const handleClose = () => {
                     <p
                         class="mt-1 text-[10px] text-[#706f6c] dark:text-[#A1A09A]"
                     >
-                        Contoh: Gedung A - Lantai 2. Jika Gedung dan Lantai
-                        diisi, sistem akan menyimpannya secara otomatis.
+                        Contoh: Gedung A - Lantai 2.
                     </p>
                 </div>
 
-                <!-- DESKRIPSI -->
                 <div>
                     <label
                         class="mb-1 block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
@@ -326,7 +420,6 @@ const handleClose = () => {
                     ></textarea>
                 </div>
 
-                <!-- STATUS -->
                 <div class="flex items-center gap-2 pt-1">
                     <input
                         id="is_active"
@@ -343,28 +436,27 @@ const handleClose = () => {
                     </label>
                 </div>
 
-                <!-- FOOTER -->
                 <div
-                    class="mt-6 flex items-center justify-end gap-2 border-t border-[#e3e3e0] pt-2 dark:border-[#3E3E3A]"
+                    class="mt-6 flex items-center justify-end gap-2 border-t border-[#e3e3e0] pt-4 dark:border-[#3E3E3A]"
                 >
                     <button
                         type="button"
                         @click="handleClose"
-                        class="mt-4 rounded-lg border border-[#e3e3e0] bg-white px-4 py-2 text-xs font-medium text-[#1b1b18] transition hover:bg-slate-50 dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#EDEDEC] dark:hover:bg-[#20201e]"
+                        :disabled="processing"
+                        class="rounded-lg border border-[#e3e3e0] bg-white px-4 py-2 text-xs font-medium text-[#1b1b18] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#EDEDEC] dark:hover:bg-[#20201e]"
                     >
                         Batal
                     </button>
 
                     <button
                         type="submit"
-                        :disabled="faculties.length === 0"
-                        class="mt-4 rounded-lg bg-[#f53003] px-4 py-2 text-xs font-medium text-white transition hover:bg-[#d92900] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-[#FF4433] dark:hover:bg-[#e03b2b]"
+                        :disabled="processing"
+                        class="rounded-lg bg-[#f53003] px-4 py-2 text-xs font-medium text-white transition hover:bg-[#d92900] focus:outline-none focus:ring-2 focus:ring-[#f53003] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-[#FF4433] dark:hover:bg-[#e03b2b] dark:focus:ring-[#FF4433] dark:focus:ring-offset-[#161615]"
                     >
-                        {{ room ? "Simpan Perubahan" : "Simpan Data" }}
+                        {{ processing ? "Menyimpan..." : (room ? "Simpan Perubahan" : "Simpan Data") }}
                     </button>
                 </div>
             </form>
         </div>
     </div>
 </template>
-```

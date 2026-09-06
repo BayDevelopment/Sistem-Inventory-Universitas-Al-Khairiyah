@@ -11,24 +11,17 @@ return new class extends Migration
      */
     public function up(): void
     {
-          Schema::create('items', function (Blueprint $table) {
+        Schema::create('room_types', function (Blueprint $table) {
             $table->id();
-
-            $table->string('name');
-
-            $table->foreignId('category_id')
-                ->nullable()
-                ->constrained('item_categories')
-                ->nullOnDelete();
-
+            $table->string('name'); // Contoh: "Kelas", "Lab Komputer", dll
+            $table->string('slug')->unique(); // Contoh: "kelas", "lab_komputer"
             $table->text('description')->nullable();
-
             $table->timestamps();
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('items');
+        Schema::dropIfExists('room_types');
     }
 };

@@ -7,7 +7,9 @@ use App\Models\Item;
 use App\Models\Room;
 use App\Models\RoomInventory;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use Illuminate\Support\Str;
 
 class RoomInventoryController extends Controller
 {
@@ -22,7 +24,7 @@ class RoomInventoryController extends Controller
         return Inertia::render('Admin/RoomInventories/Index', [
             'inventories' => $inventories,
             'rooms' => Room::where('is_active', true)->get(['id', 'name', 'code']),
-            'items' => Item::get(['id', 'name', 'code']),
+            'items' => Item::get(['id', 'name']), // Menyesuaikan kolom tabel items yang ada
         ]);
     }
 
@@ -31,17 +33,25 @@ class RoomInventoryController extends Controller
         $validated = $request->validate([
             'room_id' => 'required|exists:rooms,id',
             'item_id' => 'required|exists:items,id',
-            'asset_code' => 'required|string|max:100|unique:room_inventories,asset_code',
+            'quantity' => 'required|integer|min:1|max:100',
             'condition' => 'required|in:good,damaged_light,damaged_heavy',
             'is_borrowable' => 'boolean',
             'notes' => 'nullable|string',
         ]);
 
-        RoomInventory::create($validated);
+        $quantity = $validated['quantity'];
+        unset($validated['quantity']);
+
+        // Gunakan Transaction agar aman secara integritas database
+        DB::transaction(function () use ($quantity, $validated) {
+            for ($i = 0; $i < $quantity; $i++) {
+                RoomInventory::create($validated);
+            }
+        });
 
         return redirect()->back()->with('toast', [
             'type' => 'success',
-            'message' => 'Inventaris ruangan berhasil ditambahkan',
+            'message' => "Berhasil menambahkan {$quantity} aset inventaris ruangan",
         ]);
     }
 
@@ -66,7 +76,6 @@ class RoomInventoryController extends Controller
 
     public function destroy(RoomInventory $roomInventory)
     {
-        // Proteksi jika aset barang pernah/sedang memiliki riwayat peminjaman
         if ($roomInventory->borrowings()->exists()) {
             return redirect()->back()->with('toast', [
                 'type' => 'error',

@@ -17,11 +17,12 @@ import {
     destroy as destroyInventory,
 } from "@/actions/App/Http/Controllers/RoomInventoryController";
 
-type RoomType =
-    | "kelas"
-    | "lab_komputer"
-    | "ruang_dosen"
-    | "ruang_akademik";
+// Ubah RoomType menjadi interface objek dinamis dari database
+interface RoomType {
+    id: number;
+    name: string;
+    slug: string;
+}
 
 type ItemCondition = "good" | "damaged_light" | "damaged_heavy";
 
@@ -32,8 +33,8 @@ interface Item {
 
 interface RoomInventory {
     id: number;
-    room_id: number | null;
-    item_id: number | null;
+    room_id: number | string | null;
+    item_id: number | string | null;
     item?: Item | null;
     asset_code: string;
     condition: ItemCondition;
@@ -51,9 +52,10 @@ interface Faculty {
 interface Room {
     id: number;
     faculty_id: number;
+    room_type_id: number; // <-- Menggantikan enum type
+    room_type?: RoomType | null; // <-- Relasi objek tipe ruangan
     code: string;
     name: string;
-    type: RoomType;
     building: string | null;
     floor: string | null;
     building_floor: string | null;
@@ -73,7 +75,9 @@ interface PaginatedRooms {
 
 const props = defineProps<{
     faculties: Faculty[];
+    roomTypes: RoomType[];
     rooms: PaginatedRooms;
+    allRooms: Room[];
     items: Item[];
 }>();
 
@@ -81,6 +85,7 @@ const searchQuery = ref("");
 const expandedRooms = ref<number[]>([]);
 
 const isRoomModalOpen = ref(false);
+const isRoomProcessing = ref(false);
 const editingRoom = ref<Room | null>(null);
 
 const isInventoryModalOpen = ref(false);
@@ -95,13 +100,8 @@ const confirmAction = ref<(() => void) | null>(null);
 const isDeleting = ref(false);
 
 const rooms = computed(() => props.rooms?.data ?? []);
-
-const roomTypeLabels: Record<RoomType, string> = {
-    kelas: "Kelas",
-    lab_komputer: "Lab Komputer",
-    ruang_dosen: "Ruang Dosen",
-    ruang_akademik: "Ruang Akademik",
-};
+const hasFaculties = computed(() => props.faculties.length > 0);
+const hasRoomTypes = computed(() => props.roomTypes.length > 0);
 
 const conditionLabels: Record<ItemCondition, string> = {
     good: "Baik",
@@ -123,9 +123,7 @@ const totalInventories = computed(() =>
     rooms.value.reduce(
         (total, room) =>
             total +
-            (room.inventories_count ??
-                room.roomInventories?.length ??
-                0),
+            (room.inventories_count ?? room.roomInventories?.length ?? 0),
         0,
     ),
 );
@@ -141,7 +139,7 @@ const filteredRooms = computed(() => {
         const roomMatch =
             room.code?.toLowerCase().includes(query) ||
             room.name?.toLowerCase().includes(query) ||
-            roomTypeLabels[room.type]?.toLowerCase().includes(query) ||
+            room.room_type?.name?.toLowerCase().includes(query) ||
             room.building?.toLowerCase().includes(query) ||
             room.floor?.toLowerCase().includes(query) ||
             room.building_floor?.toLowerCase().includes(query) ||
@@ -154,9 +152,7 @@ const filteredRooms = computed(() => {
             (inv) =>
                 inv.asset_code?.toLowerCase().includes(query) ||
                 inv.item?.name?.toLowerCase().includes(query) ||
-                conditionLabels[inv.condition]
-                    ?.toLowerCase()
-                    .includes(query) ||
+                conditionLabels[inv.condition]?.toLowerCase().includes(query) ||
                 (inv.notes ?? "").toLowerCase().includes(query),
         );
 
@@ -186,33 +182,59 @@ const openEditRoomModal = (room: Room) => {
 
 const handleSaveRoom = (data: {
     faculty_id: number | string;
+    room_type_id: number | string;
     code: string;
     name: string;
-    type: RoomType;
     building: string | null;
     floor: string | null;
     building_floor: string | null;
     description: string | null;
     is_active: boolean;
 }) => {
+    const facultyId = Number(data.faculty_id);
+    const roomTypeId = Number(data.room_type_id);
+
+    if (!facultyId || !roomTypeId) {
+        console.error("Faculty ID atau Room Type ID kosong", {
+            facultyId,
+            roomTypeId,
+            data,
+        });
+
+        return;
+    }
+
     const payload = {
-        faculty_id: Number(data.faculty_id),
-        code: data.code,
-        name: data.name,
-        type: data.type,
-        building: data.building,
-        floor: data.floor,
-        building_floor: data.building_floor,
-        description: data.description,
+        faculty_id: facultyId,
+        room_type_id: roomTypeId,
+        code: data.code.trim(),
+        name: data.name.trim(),
+        building: data.building?.trim() || null,
+        floor: data.floor?.trim() || null,
+        building_floor: data.building_floor?.trim() || null,
+        description: data.description?.trim() || null,
         is_active: data.is_active,
     };
+
+    console.log("SUBMIT ROOM:", payload);
+
+    isRoomProcessing.value = true;
 
     if (editingRoom.value) {
         router.put(updateRoom.url(editingRoom.value.id), payload, {
             preserveScroll: true,
+
             onSuccess: () => {
                 isRoomModalOpen.value = false;
                 editingRoom.value = null;
+            },
+
+            onError: (errors) => {
+                console.error("Gagal update ruangan:", errors);
+            },
+
+            onFinish: () => {
+                isRoomProcessing.value = false;
             },
         });
 
@@ -221,8 +243,18 @@ const handleSaveRoom = (data: {
 
     router.post(storeRoom.url(), payload, {
         preserveScroll: true,
+
         onSuccess: () => {
             isRoomModalOpen.value = false;
+            editingRoom.value = null;
+        },
+
+        onError: (errors) => {
+            console.error("Gagal menyimpan ruangan:", errors);
+        },
+
+        onFinish: () => {
+            isRoomProcessing.value = false;
         },
     });
 };
@@ -254,10 +286,7 @@ const openInventoryModal = (room: Room) => {
     isInventoryModalOpen.value = true;
 };
 
-const openEditInventoryModal = (
-    room: Room,
-    inventory: RoomInventory,
-) => {
+const openEditInventoryModal = (room: Room, inventory: RoomInventory) => {
     activeRoomForInventory.value = room;
 
     editingInventory.value = {
@@ -283,6 +312,7 @@ const closeInventoryModal = () => {
 
 const handleSaveInventory = (data: {
     item_id: number | null;
+    quantity?: number;
     asset_code: string;
     condition: ItemCondition;
     is_borrowable: boolean;
@@ -297,6 +327,7 @@ const handleSaveInventory = (data: {
     const payload = {
         room_id: activeRoomForInventory.value.id,
         item_id: data.item_id,
+        quantity: data.quantity ?? 1,
         asset_code: data.asset_code,
         condition: data.condition,
         is_borrowable: data.is_borrowable,
@@ -304,25 +335,18 @@ const handleSaveInventory = (data: {
     };
 
     if (editingInventory.value?.id) {
-        router.put(
-            updateInventory.url(editingInventory.value.id),
-            payload,
-            {
-                preserveScroll: true,
-                onSuccess: () => {
-                    closeInventoryModal();
-                },
-                onError: (errors) => {
-                    console.error(
-                        "Gagal update inventaris ruangan:",
-                        errors,
-                    );
-                },
-                onFinish: () => {
-                    isInventoryProcessing.value = false;
-                },
+        router.put(updateInventory.url(editingInventory.value.id), payload, {
+            preserveScroll: true,
+            onSuccess: () => {
+                closeInventoryModal();
             },
-        );
+            onError: (errors) => {
+                console.error("Gagal update inventaris ruangan:", errors);
+            },
+            onFinish: () => {
+                isInventoryProcessing.value = false;
+            },
+        });
 
         return;
     }
@@ -333,10 +357,7 @@ const handleSaveInventory = (data: {
             closeInventoryModal();
         },
         onError: (errors) => {
-            console.error(
-                "Gagal menyimpan inventaris ruangan:",
-                errors,
-            );
+            console.error("Gagal menyimpan inventaris ruangan:", errors);
         },
         onFinish: () => {
             isInventoryProcessing.value = false;
@@ -386,13 +407,9 @@ const executeDelete = () => {
 <template>
     <Head title="Manajemen Ruangan & Inventaris - Sistem Inventory" />
 
-    <div
-        class="relative flex flex-1 flex-col gap-6 overflow-hidden p-4 md:p-6"
-    >
+    <div class="relative flex flex-1 flex-col gap-6 overflow-hidden p-4 md:p-6">
         <!-- Decorative Background -->
-        <div
-            class="pointer-events-none absolute inset-0 overflow-hidden"
-        >
+        <div class="pointer-events-none absolute inset-0 overflow-hidden">
             <div
                 class="animate-blob absolute -left-24 -top-24 h-72 w-72 rounded-full bg-[#f53003]/10 blur-3xl dark:bg-[#FF4433]/10 sm:h-96 sm:w-96"
             ></div>
@@ -436,9 +453,7 @@ const executeDelete = () => {
 
                 <span>/</span>
 
-                <span
-                    class="font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
-                >
+                <span class="font-medium text-[#1b1b18] dark:text-[#EDEDEC]">
                     Manajemen Ruangan
                 </span>
             </div>
@@ -595,9 +610,7 @@ const executeDelete = () => {
                             Master Data Ruangan & Inventaris
                         </h2>
 
-                        <p
-                            class="text-xs text-[#706f6c] dark:text-[#A1A09A]"
-                        >
+                        <p class="text-xs text-[#706f6c] dark:text-[#A1A09A]">
                             Kelola seluruh ruangan beserta aset inventaris di
                             lingkungan kampus.
                         </p>
@@ -658,9 +671,7 @@ const executeDelete = () => {
                         Tidak ada ruangan ditemukan
                     </h3>
 
-                    <p
-                        class="mt-1 text-xs text-[#706f6c] dark:text-[#A1A09A]"
-                    >
+                    <p class="mt-1 text-xs text-[#706f6c] dark:text-[#A1A09A]">
                         Coba gunakan kata kunci pencarian yang berbeda.
                     </p>
                 </div>
@@ -696,9 +707,7 @@ const executeDelete = () => {
                                         class="h-4 w-4 transition-transform duration-200"
                                         :class="{
                                             'rotate-180':
-                                                expandedRooms.includes(
-                                                    room.id,
-                                                ),
+                                                expandedRooms.includes(room.id),
                                         }"
                                     >
                                         <path
@@ -718,8 +727,8 @@ const executeDelete = () => {
                                             class="rounded bg-[#fff2f2] px-2 py-0.5 text-[10px] font-bold text-[#f53003] dark:bg-[#1D0002] dark:text-[#FF4433]"
                                         >
                                             {{
-                                                roomTypeLabels[room.type] ??
-                                                room.type
+                                                room.room_type?.name ??
+                                                "Jenis Ruangan belum dipilih"
                                             }}
                                         </span>
 
@@ -762,7 +771,8 @@ const executeDelete = () => {
                                             {{
                                                 room.faculty?.code
                                                     ? `${room.faculty.code} - ${room.faculty.name}`
-                                                    : room.faculty?.name ?? "-"
+                                                    : (room.faculty?.name ??
+                                                      "-")
                                             }}
                                         </span>
                                     </p>
@@ -887,9 +897,7 @@ const executeDelete = () => {
                             class="bg-white/50 p-4 dark:bg-[#161615]/30"
                         >
                             <div
-                                v-if="
-                                    (room.roomInventories?.length ?? 0) > 0
-                                "
+                                v-if="(room.roomInventories?.length ?? 0) > 0"
                                 class="overflow-x-auto"
                             >
                                 <table class="w-full text-left text-xs">
@@ -968,8 +976,7 @@ const executeDelete = () => {
                                                     {{
                                                         conditionLabels[
                                                             inv.condition
-                                                        ] ??
-                                                        inv.condition
+                                                        ] ?? inv.condition
                                                     }}
                                                 </span>
                                             </td>
@@ -1085,6 +1092,8 @@ const executeDelete = () => {
             :show="isRoomModalOpen"
             :room="editingRoom"
             :faculties="faculties"
+            :room-types="roomTypes"
+            :processing="isRoomProcessing"
             @close="
                 isRoomModalOpen = false;
                 editingRoom = null;
@@ -1096,9 +1105,10 @@ const executeDelete = () => {
         <RoomInventoryModal
             :show="isInventoryModalOpen"
             :inventory="editingInventory"
-            :rooms="rooms"
+            :rooms="props.allRooms"
             :items="items"
-            :is-processing="isInventoryProcessing"
+            :processing="isInventoryProcessing"
+            :default-room-id="activeRoomForInventory?.id"
             @close="closeInventoryModal"
             @submit="handleSaveInventory"
         />
@@ -1146,8 +1156,6 @@ const executeDelete = () => {
         </div>
     </div>
 </template>
-`
-
 
 <style scoped>
 @keyframes blob {

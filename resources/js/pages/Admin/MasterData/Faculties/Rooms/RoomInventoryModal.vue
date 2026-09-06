@@ -9,28 +9,39 @@ interface Room {
 
 interface MasterItem {
     id: number;
-    code: string;
     name: string;
 }
 
 interface RoomInventory {
     id?: number;
-    room_id: number | string;
-    item_id: number | string;
-    asset_code: string;
+    room_id: number | string | null;
+    item_id: number | string | null;
+    asset_code?: string | null;
     condition: "good" | "damaged_light" | "damaged_heavy";
     is_borrowable: boolean;
     notes: string | null;
 }
 
-type InventoryFormData = Omit<RoomInventory, "id">;
+interface InventoryFormData extends Omit<RoomInventory, "id"> {
+    quantity?: number;
+}
 
-const props = defineProps<{
-    show: boolean;
-    inventory?: RoomInventory | null;
-    rooms: Room[];
-    items: MasterItem[];
-}>();
+const props = withDefaults(
+    defineProps<{
+        show: boolean;
+        inventory?: RoomInventory | null;
+        rooms?: Room[];
+        items?: MasterItem[];
+        processing?: boolean;
+        defaultRoomId?: number | string | null;
+    }>(),
+    {
+        rooms: () => [],
+        items: () => [],
+        processing: false,
+        defaultRoomId: null,
+    },
+);
 
 const emit = defineEmits<{
     (e: "close"): void;
@@ -40,6 +51,7 @@ const emit = defineEmits<{
 const form = ref<InventoryFormData>({
     room_id: "",
     item_id: "",
+    quantity: 1,
     asset_code: "",
     condition: "good",
     is_borrowable: true,
@@ -47,33 +59,53 @@ const form = ref<InventoryFormData>({
 });
 
 watch(
-    () => props.inventory,
-    (newVal) => {
-        if (newVal) {
-            form.value = {
-                room_id: newVal.room_id,
-                item_id: newVal.item_id,
-                asset_code: newVal.asset_code,
-                condition: newVal.condition,
-                is_borrowable: newVal.is_borrowable ?? true,
-                notes: newVal.notes || "",
-            };
-        } else {
-            form.value = {
-                room_id: "",
-                item_id: "",
-                asset_code: "",
-                condition: "good",
-                is_borrowable: true,
-                notes: "",
-            };
+    () => [props.inventory, props.show, props.defaultRoomId] as const,
+    ([newInventory, isShown, defaultRoomId]) => {
+        if (!isShown) {
+            return;
         }
+
+        if (newInventory) {
+            form.value = {
+                room_id: newInventory.room_id ?? "",
+                item_id: newInventory.item_id ?? "",
+                quantity: 1,
+                asset_code: newInventory.asset_code ?? "",
+                condition: newInventory.condition ?? "good",
+                is_borrowable:
+                    newInventory.is_borrowable ?? true,
+                notes: newInventory.notes ?? "",
+            };
+
+            return;
+        }
+
+        form.value = {
+            room_id: defaultRoomId ?? "",
+            item_id: "",
+            quantity: 1,
+            asset_code: "",
+            condition: "good",
+            is_borrowable: true,
+            notes: "",
+        };
     },
-    { immediate: true },
+    {
+        immediate: true,
+    },
 );
 
 const handleSubmit = () => {
-    emit("submit", form.value);
+    emit("submit", {
+        ...form.value,
+        room_id: form.value.room_id,
+        item_id: form.value.item_id,
+        quantity: form.value.quantity ?? 1,
+        asset_code: form.value.asset_code ?? "",
+        condition: form.value.condition,
+        is_borrowable: form.value.is_borrowable,
+        notes: form.value.notes ?? null,
+    });
 };
 
 const handleClose = () => {
@@ -102,6 +134,7 @@ const handleClose = () => {
                     }}
                 </h3>
                 <button
+                    type="button"
                     @click="handleClose"
                     class="rounded-lg p-1 text-[#706f6c] hover:bg-slate-100 hover:text-[#1b1b18] dark:text-[#A1A09A] dark:hover:bg-[#20201e] dark:hover:text-[#EDEDEC]"
                 >
@@ -116,7 +149,7 @@ const handleClose = () => {
                         <path
                             stroke-linecap="round"
                             stroke-linejoin="round"
-                            d="M6 18 18 6M6 6l12 12"
+                            d="M6 18L18 6M6 6l12 12"
                         />
                     </svg>
                 </button>
@@ -149,12 +182,6 @@ const handleClose = () => {
                             {{ room.code }} - {{ room.name }}
                         </option>
                     </select>
-                    <p
-                        v-if="rooms.length === 0"
-                        class="mt-1 text-[11px] font-medium text-amber-600 dark:text-amber-500"
-                    >
-                        Silahkan input data Ruangan terlebih dahulu.
-                    </p>
                 </div>
 
                 <div>
@@ -180,7 +207,7 @@ const handleClose = () => {
                             :key="item.id"
                             :value="item.id"
                         >
-                            {{ item.code }} - {{ item.name }}
+                            {{ item.name }}
                         </option>
                     </select>
                     <p
@@ -191,18 +218,45 @@ const handleClose = () => {
                     </p>
                 </div>
 
+                <!-- Input Jumlah Unit (Hanya muncul saat mode Tambah Data baru) -->
+                <div v-if="!inventory">
+                    <label
+                        class="mb-1 block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
+                    >
+                        Jumlah Unit (Quantity)
+                    </label>
+                    <input
+                        v-model.number="form.quantity"
+                        type="number"
+                        min="1"
+                        max="100"
+                        required
+                        class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2 text-xs text-[#1b1b18] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433]"
+                    />
+                </div>
+
                 <div>
                     <label
                         class="mb-1 block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
-                        >Kode Aset Fisik</label
+                        >Kode Aset Fisik
+                        <span class="text-[#a1a09a]">(Otomatis)</span></label
                     >
                     <input
-                        v-model="form.asset_code"
                         type="text"
-                        placeholder="Contoh: PROJ-LAB1-001"
-                        required
-                        class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2 text-xs text-[#1b1b18] placeholder-[#a1a09a] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433]"
+                        disabled
+                        :value="
+                            inventory
+                                ? inventory.asset_code
+                                : 'Dibuat otomatis oleh sistem'
+                        "
+                        class="w-full cursor-not-allowed rounded-lg border border-[#e3e3e0] bg-slate-100 px-3 py-2 text-xs text-slate-400 dark:border-[#3E3E3A] dark:bg-white/5 dark:text-[#5c5c58]"
                     />
+                    <p
+                        class="mt-1 text-[10px] text-[#706f6c] dark:text-[#A1A09A]"
+                    >
+                        Kode akan digenerate otomatis berdasarkan Ruangan &
+                        Barang.
+                    </p>
                 </div>
 
                 <div>
@@ -251,20 +305,22 @@ const handleClose = () => {
                 </div>
 
                 <div
-                    class="mt-6 flex items-center justify-end gap-2 pt-2 border-t border-[#e3e3e0] dark:border-[#3E3E3A]"
+                    class="mt-6 flex items-center justify-end gap-2 border-t border-[#e3e3e0] pt-4 dark:border-[#3E3E3A]"
                 >
                     <button
                         type="button"
                         @click="handleClose"
-                        class="mt-4 rounded-lg border border-[#e3e3e0] bg-white px-4 py-2 text-xs font-medium text-[#1b1b18] transition hover:bg-slate-50 dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#EDEDEC] dark:hover:bg-[#20201e]"
+                        :disabled="processing"
+                        class="rounded-lg border border-[#e3e3e0] bg-white px-4 py-2 text-xs font-medium text-[#1b1b18] transition hover:bg-slate-50 disabled:opacity-50 dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#EDEDEC] dark:hover:bg-[#20201e]"
                     >
                         Batal
                     </button>
                     <button
                         type="submit"
-                        class="mt-4 rounded-lg bg-[#f53003] px-4 py-2 text-xs font-medium text-white transition hover:bg-[#d92900] dark:bg-[#FF4433] dark:hover:bg-[#e03b2b]"
+                        :disabled="processing"
+                        class="rounded-lg bg-[#f53003] px-4 py-2 text-xs font-medium text-white transition hover:bg-[#d92900] disabled:opacity-50 dark:bg-[#FF4433] dark:hover:bg-[#e03b2b]"
                     >
-                        Simpan Data
+                        {{ processing ? "Menyimpan..." : "Simpan Data" }}
                     </button>
                 </div>
             </form>

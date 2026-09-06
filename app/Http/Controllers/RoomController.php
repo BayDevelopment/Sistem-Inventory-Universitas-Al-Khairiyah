@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\RoomResource;
 use App\Models\Faculty;
+use App\Models\Item;
 use App\Models\Room;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -12,8 +13,15 @@ class RoomController extends Controller
 {
     public function index()
     {
+        /*
+    |--------------------------------------------------------------------------
+    | Rooms untuk tabel
+    |--------------------------------------------------------------------------
+    */
+
         $rooms = Room::with([
             'faculty',
+            'roomType',
             'inventories.item',
         ])
             ->withCount('inventories')
@@ -23,18 +31,70 @@ class RoomController extends Controller
                 fn(Room $room) => (new RoomResource($room))->resolve()
             );
 
+        /*
+    |--------------------------------------------------------------------------
+    | Semua Rooms untuk dropdown inventaris
+    |--------------------------------------------------------------------------
+    */
+
+        $allRooms = Room::query()
+            ->orderBy('code')
+            ->get([
+                'id',
+                'code',
+                'name',
+            ]);
+
+        /*
+    |--------------------------------------------------------------------------
+    | Master Barang
+    |--------------------------------------------------------------------------
+    */
+
+        $items = Item::query()
+            ->orderBy('name')
+            ->get([
+                'id',
+                'name',
+            ]);
+
+        /*
+    |--------------------------------------------------------------------------
+    | Master Tipe Ruangan
+    |--------------------------------------------------------------------------
+    */
+
+        $roomTypes = \App\Models\RoomType::query()
+            ->orderBy('name')
+            ->get([
+                'id',
+                'name',
+                'slug',
+            ]);
+
+        /*
+    |--------------------------------------------------------------------------
+    | Fakultas
+    |--------------------------------------------------------------------------
+    */
+
+        $faculties = Faculty::query()
+            ->orderBy('name')
+            ->get([
+                'id',
+                'name',
+                'code',
+            ]);
+
+
         return Inertia::render(
             'Admin/MasterData/Faculties/Rooms/Index',
             [
                 'rooms' => $rooms,
-
-                'faculties' => Faculty::query()
-                    ->orderBy('name')
-                    ->get([
-                        'id',
-                        'name',
-                        'code',
-                    ]),
+                'allRooms' => $allRooms,
+                'items' => $items,
+                'roomTypes' => $roomTypes,
+                'faculties' => $faculties,
             ]
         );
     }
@@ -61,9 +121,9 @@ class RoomController extends Controller
                 'max:255',
             ],
 
-            'type' => [
+            'room_type_id' => [
                 'required',
-                'in:kelas,lab_komputer,ruang_dosen,ruang_akademik',
+                'exists:room_types,id',
             ],
 
             'building' => [
@@ -130,9 +190,9 @@ class RoomController extends Controller
                 'max:255',
             ],
 
-            'type' => [
+            'room_type_id' => [
                 'required',
-                'in:kelas,lab_komputer,ruang_dosen,ruang_akademik',
+                'exists:room_types,id',
             ],
 
             'building' => [

@@ -1,10 +1,14 @@
 <?php
 
+use App\Http\Controllers\BorrowingController;
+use App\Http\Controllers\DashboardAdminController;
 use App\Http\Controllers\FacultyController;
 use App\Http\Controllers\ItemCategoryController;
 use App\Http\Controllers\ItemController;
+use App\Http\Controllers\ProcurementController;
 use App\Http\Controllers\RoomController;
 use App\Http\Controllers\RoomInventoryController;
+use App\Http\Controllers\RoomTypeController;
 use App\Http\Controllers\StudyProgramController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -35,15 +39,24 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->group(function () {
 
             // Dashboard Admin -> URL: /admin/dashboard | Name: admin.dashboard
-            Route::get('/dashboard', function () {
-                return Inertia::render('Admin/Dashboard');
-            })->name('dashboard');
+            Route::get('/dashboard', [DashboardAdminController::class, 'index'])
+                ->name('dashboard');
+
+            Route::put('/dashboard/room-types/{roomType}', [DashboardAdminController::class, 'update'])
+                ->name('dashboard.room-types.update');
+
+            Route::delete('/dashboard/room-types/{roomType}', [DashboardAdminController::class, 'destroy'])
+                ->name('dashboard.room-types.destroy');
 
             Route::resource('faculties', FacultyController::class)->only(['index', 'store', 'update', 'destroy']);
 
             Route::resource('study-programs', StudyProgramController::class)->only(['store', 'update', 'destroy']);
 
             Route::resource('rooms', RoomController::class);
+
+            Route::resource('room-types', RoomTypeController::class)
+                ->only(['index', 'store', 'update', 'destroy']);
+
             Route::resource('room-inventories', RoomInventoryController::class);
 
             Route::resource('categories', ItemCategoryController::class)
@@ -51,6 +64,29 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
             Route::resource('items', ItemController::class)
                 ->only(['index', 'store', 'update', 'destroy']);
+
+            Route::resource('borrowings', BorrowingController::class)->only(['index', 'store', 'update', 'destroy',]);
+
+            Route::resource('procurements', ProcurementController::class)
+                ->only([
+                    'index',
+                    'store',
+                    'show',
+                    'update',
+                    'destroy',
+                ]);
+
+            Route::post('/procurements/{procurement}/approve', [ProcurementController::class, 'approve'])
+                ->name('procurements.approve');
+
+            Route::post('/procurements/{procurement}/reject', [ProcurementController::class, 'reject'])
+                ->name('procurements.reject');
+
+            Route::post('/procurements/{procurement}/complete', [ProcurementController::class, 'complete'])
+                ->name('procurements.complete');
+
+            Route::get('/procurements/{procurement}/print', [ProcurementController::class, 'print'])
+                ->name('procurements.print');
         });
 
 

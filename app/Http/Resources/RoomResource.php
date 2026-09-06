@@ -13,15 +13,16 @@ class RoomResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
+
             'id' => $this->id,
 
             'faculty_id' => $this->faculty_id,
 
+            'room_type_id' => $this->room_type_id,
+
             'code' => $this->code,
 
             'name' => $this->name,
-
-            'type' => $this->type,
 
             'building' => $this->building,
 
@@ -31,17 +32,31 @@ class RoomResource extends JsonResource
 
             'description' => $this->description,
 
-            'is_active' => $this->is_active,
+            'is_active' => (bool) $this->is_active,
 
-            'faculty' => $this->whenLoaded('faculty', function () {
-                return [
-                    'id' => $this->faculty->id,
-                    'code' => $this->faculty->code,
-                    'name' => $this->faculty->name,
-                ];
-            }),
 
-            'inventories_count' => $this->inventories_count ?? 0,
+            'faculty' => $this->whenLoaded(
+                'faculty',
+                function () {
+                    return [
+                        'id' => $this->faculty->id,
+                        'code' => $this->faculty->code,
+                        'name' => $this->faculty->name,
+                        'dean' => $this->faculty->dean ?? null,
+                    ];
+                }
+            ),
+
+            'room_type' => $this->whenLoaded(
+                'roomType',
+                function () {
+                    return [
+                        'id' => $this->roomType->id,
+                        'name' => $this->roomType->name,
+                        'slug' => $this->roomType->slug,
+                    ];
+                }
+            ),
 
             'roomInventories' => $this->whenLoaded(
                 'inventories',
@@ -51,29 +66,44 @@ class RoomResource extends JsonResource
                             return [
                                 'id' => $inventory->id,
 
-                                'room_id' => $inventory->room_id,
+                                'room_id' =>
+                                $inventory->room_id,
 
-                                'item_id' => $inventory->item_id,
+                                'item_id' =>
+                                $inventory->item_id,
 
-                                'item' => $inventory->relationLoaded('item')
+                                'asset_code' =>
+                                $inventory->asset_code,
+
+                                'condition' =>
+                                $inventory->condition,
+
+                                'is_borrowable' =>
+                                (bool) $inventory->is_borrowable,
+
+                                'notes' =>
+                                $inventory->notes,
+
+                                'item' =>
+                                $inventory->relationLoaded('item')
                                     && $inventory->item
                                     ? [
-                                        'id' => $inventory->item->id,
-                                        'name' => $inventory->item->name,
+                                        'id' =>
+                                        $inventory->item->id,
+
+                                        'name' =>
+                                        $inventory->item->name,
                                     ]
                                     : null,
-
-                                'asset_code' => $inventory->asset_code,
-
-                                'condition' => $inventory->condition,
-
-                                'is_borrowable' => $inventory->is_borrowable,
-
-                                'notes' => $inventory->notes,
                             ];
                         }
                     );
                 }
+            ),
+
+            'inventories_count' =>
+            $this->whenCounted(
+                'inventories'
             ),
         ];
     }
