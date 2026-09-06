@@ -8,7 +8,8 @@ use App\Models\Room;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -26,14 +27,27 @@ class ProcurementController extends Controller
     ];
 
     /**
-     * Roles yang boleh melakukan approval/rejection.
-     *
-     * Sesuaikan jika SDM nantinya juga menjadi approver.
+     * Hanya Super Admin yang boleh:
+     * - approve
+     * - reject
+     * - complete
      */
     private const APPROVER_ROLES = [
         'super_admin',
-        'admin_fakultas',
     ];
+
+    /**
+     * Maksimal ukuran signature setelah decode.
+     */
+    private const MAX_SIGNATURE_BYTES = 1024 * 1024; // 1MB
+
+    /**
+     * Maksimal dimensi signature.
+     *
+     * Mencegah image decompression yang terlalu besar.
+     */
+    private const MAX_SIGNATURE_WIDTH = 2000;
+    private const MAX_SIGNATURE_HEIGHT = 1000;
 
     /**
      * Display procurement list.
@@ -46,9 +60,9 @@ class ProcurementController extends Controller
 
         $query = Procurement::query()
             ->with([
-                'faculty:id,name',
+                'faculty:id,code,name',
                 'requester:id,name',
-                'room:id,name',
+                'room:id,faculty_id,code,name,building,floor',
                 'processor:id,name',
             ])
             ->latest('id');
@@ -60,19 +74,42 @@ class ProcurementController extends Controller
         if ($this->isFacultyAdmin($user)) {
             $this->ensureUserHasFaculty($user);
 
-            $query->where('faculty_id', $user->faculty_id);
+            $query->where(
+                'faculty_id',
+                $user->faculty_id
+            );
         }
 
         /*
          * Filter pencarian.
          */
         if ($request->filled('search')) {
-            $search = trim((string) $request->input('search'));
+            $search = trim(
+                (string) $request->input('search')
+            );
 
             if ($search !== '') {
                 $query->where(function ($q) use ($search) {
-                    $q->where('item_name', 'like', "%{$search}%")
-                        ->orWhere('reason', 'like', "%{$search}%");
+                    $q->where(
+                        'item_name',
+                        'like',
+                        "%{$search}%"
+                    )
+                        ->orWhere(
+                            'reason',
+                            'like',
+                            "%{$search}%"
+                        )
+                        ->orWhereHas(
+                            'requester',
+                            function ($q) use ($search) {
+                                $q->where(
+                                    'name',
+                                    'like',
+                                    "%{$search}%"
+                                );
+                            }
+                        );
                 });
             }
         }
@@ -81,10 +118,19 @@ class ProcurementController extends Controller
          * Filter status.
          */
         if ($request->filled('status')) {
-            $status = $request->input('status');
+            $status = (string) $request->input('status');
 
-            if (in_array($status, $this->allowedStatuses(), true)) {
-                $query->where('status', $status);
+            if (
+                in_array(
+                    $status,
+                    $this->allowedStatuses(),
+                    true
+                )
+            ) {
+                $query->where(
+                    'status',
+                    $status
+                );
             }
         }
 
@@ -92,54 +138,103 @@ class ProcurementController extends Controller
          * Filter tipe pengadaan.
          */
         if ($request->filled('type')) {
-            $type = $request->input('type');
+            $type = (string) $request->input('type');
 
-            if (in_array($type, $this->allowedTypes(), true)) {
-                $query->where('type', $type);
+            if (
+                in_array(
+                    $type,
+                    $this->allowedTypes(),
+                    true
+                )
+            ) {
+                $query->where(
+                    'type',
+                    $type
+                );
             }
         }
 
         /*
-         * Filter faculty hanya untuk super admin / SDM.
+         * Filter fakultas hanya untuk:
+         * - super_admin
+         * - sdm
+         *
+         * Admin fakultas tetap dikunci
+         * ke fakultas akun.
          */
         if (
             $request->filled('faculty_id') &&
             $this->canViewAllFaculties($user)
         ) {
-            $query->where(
-                'faculty_id',
-                $request->integer('faculty_id')
+            $facultyId = $request->integer(
+                'faculty_id'
             );
+
+            if ($facultyId > 0) {
+                $query->where(
+                    'faculty_id',
+                    $facultyId
+                );
+            }
         }
 
-        return Inertia::render('Admin/Procurements/Index', [
-            'procurements' => $query
-                ->paginate(15)
-                ->withQueryString(),
+        return Inertia::render(
+            'Admin/Procurements/Index',
+            [
+                'procurements' => $query
+                    ->paginate(15)
+                    ->withQueryString(),
 
-            'faculties' => $this->canViewAllFaculties($user)
-                ? Faculty::query()
-                ->select('id', 'name')
-                ->orderBy('name')
-                ->get()
-                : Faculty::query()
-                ->where('id', $user->faculty_id)
-                ->select('id', 'name')
-                ->get(),
+                'faculties' => $this->canViewAllFaculties($user)
+                    ? Faculty::query()
+                        ->select(
+                            'id',
+                            'name'
+                        )
+                        ->orderBy('name')
+                        ->get()
+                    : Faculty::query()
+                        ->where(
+                            'id',
+                            $user->faculty_id
+                        )
+                        ->select(
+                            'id',
+                            'name'
+                        )
+                        ->orderBy('name')
+                        ->get(),
 
-            'rooms' => $this->getAvailableRooms($user),
+                'rooms' => $this->getAvailableRooms($user),
 
-            'filters' => [
-                'search' => $request->input('search', ''),
-                'status' => $request->input('status', ''),
-                'type' => $request->input('type', ''),
-                'faculty_id' => $request->input('faculty_id', ''),
-            ],
-        ]);
+                'filters' => [
+                    'search' => $request->input(
+                        'search',
+                        ''
+                    ),
+                    'status' => $request->input(
+                        'status',
+                        ''
+                    ),
+                    'type' => $request->input(
+                        'type',
+                        ''
+                    ),
+                    'faculty_id' => $request->input(
+                        'faculty_id',
+                        ''
+                    ),
+                ],
+            ]
+        );
     }
 
     /**
      * Store procurement request.
+     *
+     * Hanya:
+     * - super_admin
+     * - admin_fakultas
      */
     public function store(Request $request): RedirectResponse
     {
@@ -148,17 +243,16 @@ class ProcurementController extends Controller
         $user = $request->user();
 
         /*
-         * Procurement hanya boleh dibuat oleh:
-         * - super_admin
-         * - admin_fakultas
-         *
-         * SDM tidak otomatis boleh membuat pengajuan.
+         * SDM hanya monitoring.
          */
         if (
             ! $this->isSuperAdmin($user) &&
             ! $this->isFacultyAdmin($user)
         ) {
-            abort(403, 'Anda tidak memiliki izin untuk membuat pengajuan pengadaan.');
+            abort(
+                403,
+                'Anda tidak memiliki izin untuk membuat pengajuan pengadaan.'
+            );
         }
 
         if ($this->isFacultyAdmin($user)) {
@@ -166,8 +260,22 @@ class ProcurementController extends Controller
         }
 
         $validated = $request->validate([
-            'room_id' => [
+            /*
+             * Nullable di request karena:
+             * - Super Admin memilih fakultas.
+             * - Admin Fakultas menggunakan fakultas akun.
+             */
+            'faculty_id' => [
                 'nullable',
+                'integer',
+                'exists:faculties,id',
+            ],
+
+            /*
+             * Room WAJIB.
+             */
+            'room_id' => [
+                'required',
                 'integer',
                 'exists:rooms,id',
             ],
@@ -188,7 +296,9 @@ class ProcurementController extends Controller
 
             'type' => [
                 'required',
-                Rule::in($this->allowedTypes()),
+                Rule::in(
+                    $this->allowedTypes()
+                ),
             ],
 
             'reason' => [
@@ -198,69 +308,100 @@ class ProcurementController extends Controller
                 'max:5000',
             ],
 
+            /*
+             * Optional.
+             */
             'requester_signature' => [
                 'nullable',
                 'string',
-                'max:255',
+                'max:1500000',
             ],
         ]);
 
         /*
-         * Jika admin fakultas mengajukan:
-         * faculty_id WAJIB berasal dari akun user.
+         * Tentukan fakultas berdasarkan role.
          */
-        $facultyId = $this->resolveFacultyId($user);
+        $facultyId = $this->resolveFacultyId(
+            $user,
+            isset($validated['faculty_id'])
+                ? (int) $validated['faculty_id']
+                : null
+        );
 
         /*
-         * Pastikan room berada di fakultas yang sama.
+         * Room WAJIB dan harus berasal dari fakultas
+         * yang sama.
          */
-        if (! empty($validated['room_id'])) {
-            $this->ensureRoomBelongsToFaculty(
-                (int) $validated['room_id'],
-                $facultyId
+        $this->ensureRoomBelongsToFaculty(
+            (int) $validated['room_id'],
+            $facultyId
+        );
+
+        /*
+         * Signature baru hanya boleh berupa PNG data URI.
+         */
+        $signaturePath = $this->resolveNewSignature(
+            $validated['requester_signature'] ?? null,
+            'requester_signature'
+        );
+
+        try {
+            DB::transaction(function () use (
+                $validated,
+                $user,
+                $facultyId,
+                $signaturePath
+            ) {
+                Procurement::create([
+                    'faculty_id' => $facultyId,
+
+                    /*
+                     * Tidak boleh diambil dari request.
+                     */
+                    'requested_by' => $user->id,
+
+                    /*
+                     * Room wajib.
+                     */
+                    'room_id' => (int) $validated['room_id'],
+
+                    'item_name' => trim(
+                        $validated['item_name']
+                    ),
+
+                    'quantity' => (int) $validated['quantity'],
+
+                    'type' => $validated['type'],
+
+                    'reason' => trim(
+                        $validated['reason']
+                    ),
+
+                    'requester_signature' => $signaturePath,
+
+                    'requested_at' => now(),
+
+                    /*
+                     * Tidak boleh ditentukan client.
+                     */
+                    'status' => Procurement::STATUS_PENDING,
+                ]);
+            });
+        } catch (\Throwable $e) {
+            /*
+             * Hapus signature baru jika transaksi gagal.
+             */
+            $this->deleteSignatureFile(
+                $signaturePath
             );
+
+            throw $e;
         }
 
-        DB::transaction(function () use (
-            $validated,
-            $user,
-            $facultyId
-        ) {
-            Procurement::create([
-                'faculty_id' => $facultyId,
-
-                /*
-                 * Tidak mengambil requested_by dari request.
-                 * Selalu menggunakan user login.
-                 */
-                'requested_by' => $user->id,
-
-                'room_id' => $validated['room_id'] ?? null,
-
-                'item_name' => trim($validated['item_name']),
-
-                'quantity' => (int) $validated['quantity'],
-
-                'type' => $validated['type'],
-
-                'reason' => trim($validated['reason']),
-
-                'requester_signature' =>
-                $validated['requester_signature'] ?? null,
-
-                'requested_at' => now(),
-
-                /*
-                 * Status selalu pending ketika dibuat.
-                 */
-                'status' => Procurement::STATUS_PENDING,
-            ]);
-        });
-
-        return back()->with(
-            'success',
-            'Pengajuan pengadaan berhasil dibuat.'
-        );
+        return back()->with('toast', [
+            'type' => 'success',
+            'message' => 'Pengajuan pengadaan berhasil dibuat.',
+        ]);
     }
 
     /**
@@ -278,9 +419,9 @@ class ProcurementController extends Controller
         );
 
         $procurement->load([
-            'faculty:id,name',
+            'faculty:id,code,name',
             'requester:id,name',
-            'room:id,name',
+            'room:id,faculty_id,code,name,building,floor',
             'processor:id,name',
         ]);
 
@@ -295,7 +436,13 @@ class ProcurementController extends Controller
     /**
      * Update procurement request.
      *
-     * Hanya pending yang boleh diedit.
+     * Hanya pending.
+     *
+     * Super Admin:
+     * - boleh edit pending.
+     *
+     * Admin Fakultas:
+     * - hanya pengajuan miliknya.
      */
     public function update(
         Request $request,
@@ -311,7 +458,7 @@ class ProcurementController extends Controller
         );
 
         /*
-         * Setelah diproses, data tidak boleh diedit lagi.
+         * Hanya pending yang boleh diedit.
          */
         if (! $procurement->isPending()) {
             throw ValidationException::withMessages([
@@ -321,12 +468,14 @@ class ProcurementController extends Controller
         }
 
         /*
-         * Hanya pengaju sendiri atau super admin
-         * yang boleh mengubah pengajuan.
+         * Super Admin boleh edit semua pending.
+         *
+         * Admin Fakultas hanya pemilik pengajuan.
          */
         if (
             ! $this->isSuperAdmin($user) &&
-            $procurement->requested_by !== $user->id
+            (int) $procurement->requested_by !==
+            (int) $user->id
         ) {
             abort(
                 403,
@@ -335,8 +484,11 @@ class ProcurementController extends Controller
         }
 
         $validated = $request->validate([
+            /*
+             * Room WAJIB.
+             */
             'room_id' => [
-                'nullable',
+                'required',
                 'integer',
                 'exists:rooms,id',
             ],
@@ -357,7 +509,9 @@ class ProcurementController extends Controller
 
             'type' => [
                 'required',
-                Rule::in($this->allowedTypes()),
+                Rule::in(
+                    $this->allowedTypes()
+                ),
             ],
 
             'reason' => [
@@ -367,40 +521,124 @@ class ProcurementController extends Controller
                 'max:5000',
             ],
 
+            /*
+             * Bisa:
+             * - null untuk menghapus signature.
+             * - data URI PNG untuk mengganti signature.
+             * - signature lama yang memang sudah tersimpan.
+             */
             'requester_signature' => [
                 'nullable',
                 'string',
-                'max:255',
+                'max:1500000',
             ],
         ]);
 
-        if (! empty($validated['room_id'])) {
-            $this->ensureRoomBelongsToFaculty(
-                (int) $validated['room_id'],
-                $procurement->faculty_id
-            );
+        /*
+         * Room harus tetap berada di fakultas procurement.
+         */
+        $this->ensureRoomBelongsToFaculty(
+            (int) $validated['room_id'],
+            (int) $procurement->faculty_id
+        );
+
+        $oldSignaturePath =
+            $procurement->requester_signature;
+
+        /*
+         * Resolve signature dengan validasi bahwa
+         * URL/path lama memang signature milik record ini.
+         */
+        $signaturePath = $this->resolveUpdateSignature(
+            $validated['requester_signature'] ?? null,
+            $oldSignaturePath,
+            'requester_signature'
+        );
+
+        try {
+            DB::transaction(function () use (
+                $procurement,
+                $validated,
+                $signaturePath
+            ) {
+                /*
+                 * Lock record ketika update.
+                 *
+                 * Mencegah update bersamaan dengan
+                 * approval/rejection.
+                 */
+                $lockedProcurement =
+                    Procurement::query()
+                        ->lockForUpdate()
+                        ->findOrFail(
+                            $procurement->id
+                        );
+
+                if (! $lockedProcurement->isPending()) {
+                    throw ValidationException::withMessages([
+                        'procurement' =>
+                        'Pengajuan ini sudah diproses dan tidak dapat diubah.',
+                    ]);
+                }
+
+                $lockedProcurement->update([
+                    'room_id' =>
+                        (int) $validated['room_id'],
+
+                    'item_name' =>
+                        trim(
+                            $validated['item_name']
+                        ),
+
+                    'quantity' =>
+                        (int) $validated['quantity'],
+
+                    'type' =>
+                        $validated['type'],
+
+                    'reason' =>
+                        trim(
+                            $validated['reason']
+                        ),
+
+                    'requester_signature' =>
+                        $signaturePath,
+                ]);
+            });
+        } catch (\Throwable $e) {
+            /*
+             * Hanya signature BARU yang boleh dibersihkan.
+             * Signature lama jangan pernah dihapus di sini.
+             */
+            if (
+                $signaturePath !== $oldSignaturePath
+            ) {
+                $this->deleteSignatureFile(
+                    $signaturePath
+                );
+            }
+
+            throw $e;
         }
 
-        $procurement->update([
-            'room_id' => $validated['room_id'] ?? null,
-            'item_name' => trim($validated['item_name']),
-            'quantity' => (int) $validated['quantity'],
-            'type' => $validated['type'],
-            'reason' => trim($validated['reason']),
-            'requester_signature' =>
-            $validated['requester_signature'] ?? null,
-        ]);
-
-        return back()->with(
-            'success',
-            'Pengajuan pengadaan berhasil diperbarui.'
+        /*
+         * Hapus signature lama setelah transaksi berhasil.
+         */
+        $this->deleteOldSignatureIfReplaced(
+            $oldSignaturePath,
+            $signaturePath
         );
+
+        return back()->with('toast', [
+            'type' => 'success',
+            'message' => 'Pengajuan pengadaan berhasil diperbarui.',
+        ]);
     }
 
     /**
      * Delete procurement.
      *
-     * Hanya pending yang boleh dihapus.
+     * Hanya pending.
      */
     public function destroy(
         Request $request,
@@ -415,6 +653,9 @@ class ProcurementController extends Controller
             $procurement
         );
 
+        /*
+         * Approved, rejected, completed immutable.
+         */
         if (! $procurement->isPending()) {
             throw ValidationException::withMessages([
                 'procurement' =>
@@ -422,9 +663,15 @@ class ProcurementController extends Controller
             ]);
         }
 
+        /*
+         * Super Admin boleh menghapus semua pending.
+         *
+         * Admin Fakultas hanya pengajuan sendiri.
+         */
         if (
             ! $this->isSuperAdmin($user) &&
-            $procurement->requested_by !== $user->id
+            (int) $procurement->requested_by !==
+            (int) $user->id
         ) {
             abort(
                 403,
@@ -432,16 +679,49 @@ class ProcurementController extends Controller
             );
         }
 
-        $procurement->delete();
+        $signaturePath =
+            $procurement->requester_signature;
 
-        return back()->with(
-            'success',
-            'Pengajuan pengadaan berhasil dihapus.'
+        DB::transaction(function () use (
+            $procurement
+        ) {
+            /*
+             * Lock sebelum delete.
+             */
+            $lockedProcurement =
+                Procurement::query()
+                    ->lockForUpdate()
+                    ->findOrFail(
+                        $procurement->id
+                    );
+
+            if (! $lockedProcurement->isPending()) {
+                throw ValidationException::withMessages([
+                    'procurement' =>
+                    'Pengajuan ini sudah diproses dan tidak dapat dihapus.',
+                ]);
+            }
+
+            $lockedProcurement->delete();
+        });
+
+        /*
+         * Hapus file setelah DB berhasil.
+         */
+        $this->deleteSignatureFile(
+            $signaturePath
         );
+
+        return back()->with('toast', [
+            'type' => 'success',
+            'message' => 'Pengajuan pengadaan berhasil dihapus.',
+        ]);
     }
 
     /**
      * Approve procurement.
+     *
+     * Hanya Super Admin.
      */
     public function approve(
         Request $request,
@@ -460,7 +740,7 @@ class ProcurementController extends Controller
             'approver_signature' => [
                 'nullable',
                 'string',
-                'max:255',
+                'max:1500000',
             ],
 
             'admin_note' => [
@@ -470,54 +750,81 @@ class ProcurementController extends Controller
             ],
         ]);
 
-        DB::transaction(function () use (
-            $procurement,
-            $user,
-            $validated
-        ) {
-            /*
-             * Lock row untuk mencegah race condition:
-             * dua admin approve procurement yang sama secara bersamaan.
-             */
-            $lockedProcurement = Procurement::query()
-                ->lockForUpdate()
-                ->findOrFail($procurement->id);
+        /*
+         * Approval signature harus signature BARU
+         * atau null.
+         */
+        $signaturePath = $this->resolveNewSignature(
+            $validated['approver_signature'] ?? null,
+            'approver_signature'
+        );
 
-            if (! $lockedProcurement->isPending()) {
-                throw ValidationException::withMessages([
-                    'procurement' =>
-                    'Pengajuan ini sudah diproses sebelumnya.',
-                ]);
-            }
-
-            $lockedProcurement->update([
-                'status' => Procurement::STATUS_APPROVED,
+        try {
+            DB::transaction(function () use (
+                $procurement,
+                $user,
+                $validated,
+                $signaturePath
+            ) {
+                $lockedProcurement =
+                    Procurement::query()
+                        ->lockForUpdate()
+                        ->findOrFail(
+                            $procurement->id
+                        );
 
                 /*
-                 * Processor selalu berasal dari authenticated user.
+                 * Hanya pending → approved.
                  */
-                'processed_by' => $user->id,
+                if (! $lockedProcurement->isPending()) {
+                    throw ValidationException::withMessages([
+                        'procurement' =>
+                        'Pengajuan ini sudah diproses sebelumnya.',
+                    ]);
+                }
 
-                'approver_signature' =>
-                $validated['approver_signature'] ?? null,
+                $lockedProcurement->update([
+                    'status' =>
+                        Procurement::STATUS_APPROVED,
 
-                'processed_at' => now(),
+                    'processed_by' =>
+                        $user->id,
 
-                'admin_note' =>
-                isset($validated['admin_note'])
-                    ? trim($validated['admin_note'])
-                    : null,
-            ]);
-        });
+                    'approver_signature' =>
+                        $signaturePath,
 
-        return back()->with(
-            'success',
-            'Pengajuan pengadaan berhasil disetujui.'
-        );
+                    'processed_at' =>
+                        now(),
+
+                    'admin_note' =>
+                        isset($validated['admin_note'])
+                            ? trim(
+                                $validated['admin_note']
+                            )
+                            : null,
+                ]);
+            });
+        } catch (\Throwable $e) {
+            /*
+             * Hanya signature baru yang dibuat pada request ini.
+             */
+            $this->deleteSignatureFile(
+                $signaturePath
+            );
+
+            throw $e;
+        }
+
+        return back()->with('toast', [
+            'type' => 'success',
+            'message' => 'Pengajuan pengadaan berhasil disetujui.',
+        ]);
     }
 
     /**
      * Reject procurement.
+     *
+     * Hanya Super Admin.
      */
     public function reject(
         Request $request,
@@ -536,9 +843,12 @@ class ProcurementController extends Controller
             'approver_signature' => [
                 'nullable',
                 'string',
-                'max:255',
+                'max:1500000',
             ],
 
+            /*
+             * Alasan reject WAJIB.
+             */
             'admin_note' => [
                 'required',
                 'string',
@@ -547,44 +857,74 @@ class ProcurementController extends Controller
             ],
         ]);
 
-        DB::transaction(function () use (
-            $procurement,
-            $user,
-            $validated
-        ) {
-            $lockedProcurement = Procurement::query()
-                ->lockForUpdate()
-                ->findOrFail($procurement->id);
-
-            if (! $lockedProcurement->isPending()) {
-                throw ValidationException::withMessages([
-                    'procurement' =>
-                    'Pengajuan ini sudah diproses sebelumnya.',
-                ]);
-            }
-
-            $lockedProcurement->update([
-                'status' => Procurement::STATUS_REJECTED,
-
-                'processed_by' => $user->id,
-
-                'approver_signature' =>
-                $validated['approver_signature'] ?? null,
-
-                'processed_at' => now(),
-
-                'admin_note' => trim($validated['admin_note']),
-            ]);
-        });
-
-        return back()->with(
-            'success',
-            'Pengajuan pengadaan berhasil ditolak.'
+        $signaturePath = $this->resolveNewSignature(
+            $validated['approver_signature'] ?? null,
+            'approver_signature'
         );
+
+        try {
+            DB::transaction(function () use (
+                $procurement,
+                $user,
+                $validated,
+                $signaturePath
+            ) {
+                $lockedProcurement =
+                    Procurement::query()
+                        ->lockForUpdate()
+                        ->findOrFail(
+                            $procurement->id
+                        );
+
+                /*
+                 * Hanya pending → rejected.
+                 */
+                if (! $lockedProcurement->isPending()) {
+                    throw ValidationException::withMessages([
+                        'procurement' =>
+                        'Pengajuan ini sudah diproses sebelumnya.',
+                    ]);
+                }
+
+                $lockedProcurement->update([
+                    'status' =>
+                        Procurement::STATUS_REJECTED,
+
+                    'processed_by' =>
+                        $user->id,
+
+                    'approver_signature' =>
+                        $signaturePath,
+
+                    'processed_at' =>
+                        now(),
+
+                    'admin_note' =>
+                        trim(
+                            $validated['admin_note']
+                        ),
+                ]);
+            });
+        } catch (\Throwable $e) {
+            $this->deleteSignatureFile(
+                $signaturePath
+            );
+
+            throw $e;
+        }
+
+        return back()->with('toast', [
+            'type' => 'success',
+            'message' => 'Pengajuan pengadaan berhasil ditolak.',
+        ]);
     }
 
     /**
      * Mark approved procurement as completed.
+     *
+     * Hanya Super Admin.
+     *
+     * approved → completed
      */
     public function complete(
         Request $request,
@@ -603,10 +943,16 @@ class ProcurementController extends Controller
             $procurement,
             $user
         ) {
-            $lockedProcurement = Procurement::query()
-                ->lockForUpdate()
-                ->findOrFail($procurement->id);
+            $lockedProcurement =
+                Procurement::query()
+                    ->lockForUpdate()
+                    ->findOrFail(
+                        $procurement->id
+                    );
 
+            /*
+             * Hanya approved → completed.
+             */
             if (! $lockedProcurement->isApproved()) {
                 throw ValidationException::withMessages([
                     'procurement' =>
@@ -615,28 +961,32 @@ class ProcurementController extends Controller
             }
 
             $lockedProcurement->update([
-                'status' => Procurement::STATUS_COMPLETED,
+                'status' =>
+                    Procurement::STATUS_COMPLETED,
 
                 /*
-                 * Tetap catat siapa yang melakukan aksi terakhir.
+                 * Catat user yang melakukan aksi terakhir.
                  */
-                'processed_by' => $user->id,
+                'processed_by' =>
+                    $user->id,
 
-                'processed_at' => now(),
+                'processed_at' =>
+                    now(),
             ]);
         });
 
-        return back()->with(
-            'success',
-            'Pengadaan berhasil ditandai sebagai selesai.'
-        );
+        return back()->with('toast', [
+            'type' => 'success',
+            'message' => 'Pengadaan berhasil ditandai sebagai selesai.',
+        ]);
     }
 
     /**
      * Authorization dasar untuk area admin.
      */
-    private function authorizeAdminRole(Request $request): void
-    {
+    private function authorizeAdminRole(
+        Request $request
+    ): void {
         $user = $request->user();
 
         abort_unless(
@@ -652,10 +1002,13 @@ class ProcurementController extends Controller
     }
 
     /**
-     * Authorization untuk approval.
+     * Authorization approval/rejection/completion.
+     *
+     * HANYA SUPER ADMIN.
      */
-    private function authorizeApprovalRole(Request $request): void
-    {
+    private function authorizeApprovalRole(
+        Request $request
+    ): void {
         $user = $request->user();
 
         abort_unless(
@@ -677,19 +1030,22 @@ class ProcurementController extends Controller
         $user,
         Procurement $procurement
     ): void {
+        /*
+         * Super Admin global.
+         */
         if ($this->isSuperAdmin($user)) {
             return;
         }
 
         /*
-         * SDM boleh melihat seluruh fakultas.
+         * SDM boleh monitoring seluruh fakultas.
          */
         if ($this->isSdm($user)) {
             return;
         }
 
         /*
-         * Admin fakultas hanya fakultasnya sendiri.
+         * Admin Fakultas hanya fakultas sendiri.
          */
         if ($this->isFacultyAdmin($user)) {
             $this->ensureUserHasFaculty($user);
@@ -716,7 +1072,10 @@ class ProcurementController extends Controller
     ): void {
         $exists = Room::query()
             ->whereKey($roomId)
-            ->where('faculty_id', $facultyId)
+            ->where(
+                'faculty_id',
+                $facultyId
+            )
             ->exists();
 
         abort_unless(
@@ -727,46 +1086,90 @@ class ProcurementController extends Controller
     }
 
     /**
-     * Tentukan faculty_id berdasarkan user.
+     * Tentukan faculty_id berdasarkan role.
+     *
+     * Super Admin:
+     * - mengambil faculty_id dari request.
+     *
+     * Admin Fakultas:
+     * - selalu menggunakan faculty_id akun.
      */
-    private function resolveFacultyId($user): int
-    {
-        if (
-            $this->isSuperAdmin($user) ||
-            $this->isSdm($user)
-        ) {
-            /*
-             * Super admin / SDM harus mengirim faculty_id
-             * jika membuat procurement lintas fakultas.
-             */
-            $facultyId = request()->validate([
-                'faculty_id' => [
-                    'required',
-                    'integer',
-                    'exists:faculties,id',
-                ],
-            ])['faculty_id'];
+    private function resolveFacultyId(
+        $user,
+        ?int $requestedFacultyId = null
+    ): int {
+        /*
+         * Super Admin boleh memilih fakultas.
+         */
+        if ($this->isSuperAdmin($user)) {
+            if (
+                $requestedFacultyId === null ||
+                $requestedFacultyId <= 0
+            ) {
+                throw ValidationException::withMessages([
+                    'faculty_id' =>
+                    'Fakultas wajib dipilih.',
+                ]);
+            }
 
-            return (int) $facultyId;
+            $exists = Faculty::query()
+                ->whereKey($requestedFacultyId)
+                ->exists();
+
+            if (! $exists) {
+                throw ValidationException::withMessages([
+                    'faculty_id' =>
+                    'Fakultas yang dipilih tidak valid.',
+                ]);
+            }
+
+            return $requestedFacultyId;
         }
 
-        $this->ensureUserHasFaculty($user);
+        /*
+         * Admin Fakultas selalu menggunakan
+         * faculty_id dari akun.
+         */
+        if ($this->isFacultyAdmin($user)) {
+            $this->ensureUserHasFaculty($user);
 
-        return (int) $user->faculty_id;
+            return (int) $user->faculty_id;
+        }
+
+        abort(
+            403,
+            'Anda tidak memiliki izin untuk membuat pengajuan pengadaan.'
+        );
     }
 
     /**
      * Ambil room sesuai scope user.
+     *
+     * Field disesuaikan dengan kebutuhan frontend:
+     * - id
+     * - faculty_id
+     * - code
+     * - name
+     * - building
+     * - floor
      */
     private function getAvailableRooms($user)
     {
         $query = Room::query()
-            ->select('id', 'faculty_id', 'name')
+            ->select(
+                'id',
+                'faculty_id',
+                'code',
+                'name',
+                'building',
+                'floor'
+            )
             ->orderBy('name');
 
-        if (
-            $this->isFacultyAdmin($user)
-        ) {
+        /*
+         * Admin Fakultas hanya melihat room fakultasnya.
+         */
+        if ($this->isFacultyAdmin($user)) {
             $this->ensureUserHasFaculty($user);
 
             $query->where(
@@ -775,6 +1178,9 @@ class ProcurementController extends Controller
             );
         }
 
+        /*
+         * Super Admin dan SDM melihat semua room.
+         */
         return $query->get();
     }
 
@@ -839,5 +1245,403 @@ class ProcurementController extends Controller
     {
         return $this->isSuperAdmin($user) ||
             $this->isSdm($user);
+    }
+
+    /**
+     * Resolve signature BARU.
+     *
+     * Hanya menerima:
+     * - null
+     * - data:image/png;base64,...
+     *
+     * Tidak menerima arbitrary URL/path dari client.
+     */
+    private function resolveNewSignature(
+        ?string $signature,
+        string $field
+    ): ?string {
+        if (
+            $signature === null ||
+            trim($signature) === ''
+        ) {
+            return null;
+        }
+
+        if (
+            ! str_starts_with(
+                $signature,
+                'data:image/png;base64,'
+            )
+        ) {
+            throw ValidationException::withMessages([
+                $field =>
+                'Tanda tangan harus berupa gambar PNG yang valid.',
+            ]);
+        }
+
+        return $this->storeSignatureImage(
+            $signature,
+            $field
+        );
+    }
+
+    /**
+     * Resolve signature saat update.
+     *
+     * Allowed:
+     * - null → hapus signature
+     * - data URI PNG → ganti signature
+     * - signature lama yang sama persis → pertahankan
+     */
+    private function resolveUpdateSignature(
+        ?string $signature,
+        ?string $oldSignaturePath,
+        string $field
+    ): ?string {
+        if (
+            $signature === null ||
+            trim($signature) === ''
+        ) {
+            return null;
+        }
+
+        /*
+         * Jika frontend mengirim signature lama,
+         * hanya izinkan jika benar-benar sama dengan
+         * signature yang tersimpan.
+         */
+        if (
+            $oldSignaturePath !== null &&
+            hash_equals(
+                $oldSignaturePath,
+                $signature
+            )
+        ) {
+            return $oldSignaturePath;
+        }
+
+        /*
+         * Selain signature lama harus berupa PNG baru.
+         */
+        return $this->resolveNewSignature(
+            $signature,
+            $field
+        );
+    }
+
+    /**
+     * Decode data URI PNG,
+     * validasi format, ukuran, MIME, dan dimensi,
+     * kemudian simpan ke storage public.
+     */
+    private function storeSignatureImage(
+        string $dataUrl,
+        string $field
+    ): string {
+        if (
+            ! preg_match(
+                '/^data:image\/png;base64,(?<data>[A-Za-z0-9+\/=\r\n]+)$/',
+                $dataUrl,
+                $matches
+            )
+        ) {
+            throw ValidationException::withMessages([
+                $field =>
+                'Format tanda tangan tidak valid.',
+            ]);
+        }
+
+        /*
+         * Decode base64 secara strict.
+         */
+        $binary = base64_decode(
+            $matches['data'],
+            true
+        );
+
+        if ($binary === false) {
+            throw ValidationException::withMessages([
+                $field =>
+                'Data tanda tangan tidak dapat dibaca.',
+            ]);
+        }
+
+        /*
+         * Batasi ukuran binary hasil decode.
+         */
+        if (
+            strlen($binary) >
+            self::MAX_SIGNATURE_BYTES
+        ) {
+            throw ValidationException::withMessages([
+                $field =>
+                'Ukuran tanda tangan terlalu besar (maksimal 1MB).',
+            ]);
+        }
+
+        /*
+         * Pastikan benar-benar image.
+         */
+        $imageInfo = @getimagesizefromstring(
+            $binary
+        );
+
+        if (
+            $imageInfo === false ||
+            ! isset(
+                $imageInfo['mime'],
+                $imageInfo[0],
+                $imageInfo[1]
+            )
+        ) {
+            throw ValidationException::withMessages([
+                $field =>
+                'File tanda tangan bukan gambar yang valid.',
+            ]);
+        }
+
+        /*
+         * Pastikan MIME benar-benar PNG.
+         */
+        if (
+            $imageInfo['mime'] !== 'image/png'
+        ) {
+            throw ValidationException::withMessages([
+                $field =>
+                'Tanda tangan harus menggunakan format PNG.',
+            ]);
+        }
+
+        /*
+         * Batasi dimensi gambar.
+         */
+        if (
+            $imageInfo[0] >
+                self::MAX_SIGNATURE_WIDTH ||
+            $imageInfo[1] >
+                self::MAX_SIGNATURE_HEIGHT
+        ) {
+            throw ValidationException::withMessages([
+                $field =>
+                'Dimensi tanda tangan terlalu besar.',
+            ]);
+        }
+
+        /*
+         * Pastikan GD dapat membaca PNG tersebut.
+         */
+        $image = @imagecreatefromstring(
+            $binary
+        );
+
+        if ($image === false) {
+            throw ValidationException::withMessages([
+                $field =>
+                'File tanda tangan bukan PNG yang valid.',
+            ]);
+        }
+
+        imagedestroy($image);
+
+        /*
+         * Generate nama file random/UUID.
+         */
+        $path =
+            'signatures/' .
+            Str::uuid()->toString() .
+            '.png';
+
+        $disk = Storage::disk('public');
+
+        /*
+         * Simpan binary.
+         */
+        $stored = $disk->put(
+            $path,
+            $binary
+        );
+
+        if (! $stored) {
+            throw ValidationException::withMessages([
+                $field =>
+                'Tanda tangan gagal disimpan.',
+            ]);
+        }
+
+        return $disk->url($path);
+    }
+
+    /**
+     * Hapus signature lama jika sudah diganti.
+     */
+    private function deleteOldSignatureIfReplaced(
+        ?string $oldPath,
+        ?string $newPath
+    ): void {
+        if (
+            empty($oldPath) ||
+            $oldPath === $newPath
+        ) {
+            return;
+        }
+
+        $this->deleteSignatureFile(
+            $oldPath
+        );
+    }
+
+    /**
+     * Hapus file signature dari storage.
+     *
+     * Hanya file di:
+     * signatures/
+     *
+     * yang boleh dihapus.
+     */
+    private function deleteSignatureFile(
+        ?string $urlOrPath
+    ): void {
+        if (
+            empty($urlOrPath)
+        ) {
+            return;
+        }
+
+        $disk = Storage::disk('public');
+
+        $relativePath = null;
+
+        /*
+         * Jika nilai merupakan relative path.
+         */
+        if (
+            str_starts_with(
+                $urlOrPath,
+                'signatures/'
+            )
+        ) {
+            $relativePath =
+                ltrim(
+                    $urlOrPath,
+                    '/'
+                );
+        }
+
+        /*
+         * Jika nilai merupakan URL public storage.
+         */
+        if ($relativePath === null) {
+            $publicPrefix = $disk->url('');
+
+            if (
+                str_starts_with(
+                    $urlOrPath,
+                    $publicPrefix
+                )
+            ) {
+                $relativePath = ltrim(
+                    substr(
+                        $urlOrPath,
+                        strlen($publicPrefix)
+                    ),
+                    '/'
+                );
+            }
+        }
+
+        /*
+         * Jika nilai berupa absolute URL,
+         * ambil path setelah /storage/.
+         */
+        if ($relativePath === null) {
+            $parsedPath = parse_url(
+                $urlOrPath,
+                PHP_URL_PATH
+            );
+
+            if (
+                is_string($parsedPath)
+            ) {
+                $storageMarker = '/storage/';
+
+                $position = strpos(
+                    $parsedPath,
+                    $storageMarker
+                );
+
+                if ($position !== false) {
+                    $relativePath = ltrim(
+                        substr(
+                            $parsedPath,
+                            $position +
+                                strlen($storageMarker)
+                        ),
+                        '/'
+                    );
+                }
+            }
+        }
+
+        if (
+            empty($relativePath)
+        ) {
+            return;
+        }
+
+        /*
+         * Normalisasi slash.
+         */
+        $relativePath =
+            str_replace(
+                '\\',
+                '/',
+                $relativePath
+            );
+
+        /*
+         * Path traversal protection.
+         */
+        if (
+            str_contains(
+                $relativePath,
+                '..'
+            )
+        ) {
+            return;
+        }
+
+        /*
+         * Hanya signature procurement.
+         */
+        if (
+            ! str_starts_with(
+                $relativePath,
+                'signatures/'
+            )
+        ) {
+            return;
+        }
+
+        /*
+         * Jangan izinkan nested traversal aneh.
+         */
+        if (
+            preg_match(
+                '#(^|/)\./#',
+                $relativePath
+            )
+        ) {
+            return;
+        }
+
+        if (
+            $disk->exists(
+                $relativePath
+            )
+        ) {
+            $disk->delete(
+                $relativePath
+            );
+        }
     }
 }

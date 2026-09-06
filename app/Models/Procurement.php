@@ -29,6 +29,8 @@ class Procurement extends Model
     public const TYPE_NEW_ITEM = 'new_item';
 
     protected $fillable = [
+        'faculty_id',
+        'requested_by',
         'room_id',
         'item_name',
         'quantity',
@@ -36,7 +38,10 @@ class Procurement extends Model
         'reason',
         'requester_signature',
         'requested_at',
+        'status',
+        'processed_by',
         'approver_signature',
+        'processed_at',
         'admin_note',
     ];
 

@@ -12,6 +12,13 @@ import ProcurementApprovalModal from "./ProcurementApprovalModal.vue";
 |--------------------------------------------------------------------------
 */
 
+type ToastType = "success" | "error" | "warning" | "info";
+
+interface Toast {
+    type: ToastType;
+    message: string;
+}
+
 interface Faculty {
     id: number;
     code: string;
@@ -33,16 +40,13 @@ interface User {
     email?: string;
 }
 
-type ProcurementStatus =
-    | "pending"
-    | "approved"
-    | "rejected"
-    | "completed";
+type ProcurementStatus = "pending" | "approved" | "rejected" | "completed";
 
 type ProcurementType = "replacement" | "new_item";
 
 interface Procurement {
     id: number;
+
     faculty_id: number | string;
     requested_by: number | string;
     room_id?: number | string | null;
@@ -98,9 +102,12 @@ interface PageProps {
     faculties?: Faculty[];
     rooms?: Room[];
     filters?: Filters;
+
     auth?: {
         user?: AuthUser;
     };
+
+    toast?: Toast | null;
 }
 
 /*
@@ -113,27 +120,77 @@ const props = defineProps<PageProps>();
 
 /*
 |--------------------------------------------------------------------------
-| State
+| Toast
+|--------------------------------------------------------------------------
+*/
+
+const toastVisible = ref(false);
+const toastType = ref<ToastType>("success");
+const toastMessage = ref("");
+
+let toastTimeout: ReturnType<typeof setTimeout> | undefined;
+
+const showToast = (type: ToastType, message: string) => {
+    if (!message || !message.trim()) {
+        return;
+    }
+
+    toastType.value = type;
+    toastMessage.value = message;
+    toastVisible.value = true;
+
+    if (toastTimeout !== undefined) {
+        clearTimeout(toastTimeout);
+    }
+
+    toastTimeout = setTimeout(() => {
+        toastVisible.value = false;
+        toastTimeout = undefined;
+    }, 3500);
+};
+
+const closeToast = () => {
+    toastVisible.value = false;
+
+    if (toastTimeout !== undefined) {
+        clearTimeout(toastTimeout);
+        toastTimeout = undefined;
+    }
+};
+
+watch(
+    () => props.toast,
+    (toast) => {
+        if (!toast?.message) {
+            return;
+        }
+
+        showToast(toast.type ?? "success", toast.message);
+    },
+    {
+        immediate: true,
+    },
+);
+
+/*
+|--------------------------------------------------------------------------
+| Loading
 |--------------------------------------------------------------------------
 */
 
 const isLoading = ref(false);
 
 /*
- * IMPORTANT:
- * Semua filter default kosong.
- * Artinya ketika pertama kali membuka halaman,
- * semua status / type / fakultas akan ditampilkan.
- */
+|--------------------------------------------------------------------------
+| Filters
+|--------------------------------------------------------------------------
+*/
+
 const searchQuery = ref(props.filters?.search ?? "");
 
-const statusFilter = ref(
-    props.filters?.status ?? "",
-);
+const statusFilter = ref(props.filters?.status ?? "");
 
-const typeFilter = ref(
-    props.filters?.type ?? "",
-);
+const typeFilter = ref(props.filters?.type ?? "");
 
 const facultyFilter = ref(
     props.filters?.faculty_id !== undefined &&
@@ -148,24 +205,35 @@ const facultyFilter = ref(
 |--------------------------------------------------------------------------
 */
 
+/* Form */
 const isFormModalOpen = ref(false);
 const editingProcurement = ref<Procurement | null>(null);
 const isFormProcessing = ref(false);
 
+/* Detail */
 const isDetailModalOpen = ref(false);
 const selectedProcurement = ref<Procurement | null>(null);
 
+/* Approval */
 const isApprovalModalOpen = ref(false);
 const approvalProcurement = ref<Procurement | null>(null);
 const isApprovalProcessing = ref(false);
 
-const isCompleteModalOpen = ref(false);
-const completeProcurement = ref<Procurement | null>(null);
-const isCompleting = ref(false);
+/* Complete */
+const isConfirmModalOpen = ref(false);
+const confirmTitle = ref("Konfirmasi");
+const confirmMessage = ref("");
+const confirmAction = ref<(() => void) | null>(null);
+const isConfirmProcessing = ref(false);
+
+/* Delete */
+const isDeleteModalOpen = ref(false);
+const deleteTarget = ref<Procurement | null>(null);
+const isDeleteProcessing = ref(false);
 
 /*
 |--------------------------------------------------------------------------
-| Computed
+| Computed Data
 |--------------------------------------------------------------------------
 */
 
@@ -186,10 +254,26 @@ const totalProcurements = computed(() => {
 });
 
 /*
- * Catatan:
- * Karena data menggunakan pagination, count di bawah ini
- * adalah jumlah data pada halaman aktif, bukan total database.
- */
+|--------------------------------------------------------------------------
+| Active Filter
+|--------------------------------------------------------------------------
+*/
+
+const hasActiveFilters = computed(() => {
+    return Boolean(
+        searchQuery.value.trim() ||
+        statusFilter.value ||
+        typeFilter.value ||
+        facultyFilter.value,
+    );
+});
+
+/*
+|--------------------------------------------------------------------------
+| Status Statistics
+|--------------------------------------------------------------------------
+*/
+
 const pendingCount = computed(() => {
     return procurements.value.filter(
         (procurement) => procurement.status === "pending",
@@ -214,36 +298,282 @@ const completedCount = computed(() => {
     ).length;
 });
 
+/*
+|--------------------------------------------------------------------------
+| Authorization
+|--------------------------------------------------------------------------
+*/
+
+const currentUser = computed(() => {
+    return props.auth?.user ?? null;
+});
+
+const currentUserId = computed(() => {
+    return currentUser.value?.id ?? null;
+});
+
 const currentUserRole = computed(() => {
-    return props.auth?.user?.role ?? "";
+    return currentUser.value?.role ?? "";
 });
 
 const isSuperAdmin = computed(() => {
     return currentUserRole.value === "super_admin";
 });
 
-/*
-|--------------------------------------------------------------------------
-| Active Filter
-|--------------------------------------------------------------------------
-*/
+const isFacultyAdmin = computed(() => {
+    return currentUserRole.value === "admin_fakultas";
+});
 
-const hasActiveFilters = computed(() => {
-    return (
-        searchQuery.value.trim() !== "" ||
-        statusFilter.value !== "" ||
-        typeFilter.value !== "" ||
-        facultyFilter.value !== ""
-    );
+const canCreateProcurement = computed(() => {
+    return isSuperAdmin.value || isFacultyAdmin.value;
+});
+
+const canManageProcurement = computed(() => {
+    return isSuperAdmin.value || isFacultyAdmin.value;
+});
+
+const canDeleteProcurement = computed(() => {
+    return isSuperAdmin.value || isFacultyAdmin.value;
 });
 
 /*
 |--------------------------------------------------------------------------
-| Labels
+| Complete Authorization
+|--------------------------------------------------------------------------
+|
+| Hanya super_admin.
 |--------------------------------------------------------------------------
 */
 
-const statusLabel = (status: ProcurementStatus) => {
+const canCompleteProcurement = computed(() => {
+    return isSuperAdmin.value;
+});
+
+/*
+|--------------------------------------------------------------------------
+| Row Authorization
+|--------------------------------------------------------------------------
+*/
+
+const canEditProcurementRow = (procurement: Procurement): boolean => {
+    if (!canManageProcurement.value) {
+        return false;
+    }
+
+    if (procurement.status !== "pending") {
+        return false;
+    }
+
+    /*
+     * Super admin dapat mengedit
+     * seluruh pengajuan pending.
+     */
+    if (isSuperAdmin.value) {
+        return true;
+    }
+
+    /*
+     * Admin fakultas hanya dapat mengedit
+     * pengajuan miliknya sendiri.
+     */
+    return (
+        currentUserId.value !== null &&
+        Number(procurement.requested_by) === Number(currentUserId.value)
+    );
+};
+
+const canDeleteProcurementRow = (procurement: Procurement): boolean => {
+    if (!canDeleteProcurement.value) {
+        return false;
+    }
+
+    if (procurement.status !== "pending") {
+        return false;
+    }
+
+    /*
+     * Super admin dapat menghapus
+     * seluruh pengajuan pending.
+     */
+    if (isSuperAdmin.value) {
+        return true;
+    }
+
+    /*
+     * Admin fakultas hanya dapat menghapus
+     * pengajuan miliknya sendiri.
+     */
+    return (
+        currentUserId.value !== null &&
+        Number(procurement.requested_by) === Number(currentUserId.value)
+    );
+};
+
+/*
+|--------------------------------------------------------------------------
+| Error Helper
+|--------------------------------------------------------------------------
+*/
+
+const getErrorMessage = (
+    errors: Record<string, string | string[]> | undefined,
+    fallback: string,
+): string => {
+    if (!errors) {
+        return fallback;
+    }
+
+    const firstError = Object.values(errors)[0];
+
+    if (Array.isArray(firstError)) {
+        return firstError[0] || fallback;
+    }
+
+    if (typeof firstError === "string" && firstError.trim() !== "") {
+        return firstError;
+    }
+
+    return fallback;
+};
+
+/*
+|--------------------------------------------------------------------------
+| Date Helper
+|--------------------------------------------------------------------------
+*/
+
+const formatDate = (date?: string | null): string => {
+    if (!date) {
+        return "-";
+    }
+
+    const parsed = new Date(date);
+
+    if (Number.isNaN(parsed.getTime())) {
+        return date;
+    }
+
+    return parsed.toLocaleDateString("id-ID", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+    });
+};
+
+/*
+|--------------------------------------------------------------------------
+| Faculty Helpers
+|--------------------------------------------------------------------------
+*/
+
+const getFaculty = (procurement: Procurement): Faculty | null => {
+    /*
+     * Prioritas pertama:
+     * relationship faculty dari backend.
+     */
+    if (procurement.faculty) {
+        return procurement.faculty;
+    }
+
+    /*
+     * Fallback:
+     * cari faculty dari props.faculties
+     * berdasarkan faculty_id.
+     */
+    if (
+        procurement.faculty_id === null ||
+        procurement.faculty_id === undefined
+    ) {
+        return null;
+    }
+
+    return (
+        faculties.value.find(
+            (faculty) => Number(faculty.id) === Number(procurement.faculty_id),
+        ) ?? null
+    );
+};
+
+const getFacultyName = (procurement: Procurement): string => {
+    return getFaculty(procurement)?.name ?? "-";
+};
+
+/*
+|--------------------------------------------------------------------------
+| Room Helpers
+|--------------------------------------------------------------------------
+|
+| FIX UTAMA:
+|
+| 1. Gunakan relationship room dari backend.
+| 2. Jika relationship tidak tersedia,
+|    fallback ke props.rooms berdasarkan room_id.
+|--------------------------------------------------------------------------
+*/
+
+const getRoom = (procurement: Procurement): Room | null => {
+    /*
+     * Relationship room dari backend
+     * menjadi sumber utama.
+     */
+    if (procurement.room) {
+        return procurement.room;
+    }
+
+    /*
+     * Tidak ada room_id berarti memang
+     * tidak ada ruangan yang dipilih.
+     */
+    if (procurement.room_id === null || procurement.room_id === undefined) {
+        return null;
+    }
+
+    /*
+     * Fallback dari daftar rooms yang
+     * dikirim controller.
+     */
+    return (
+        rooms.value.find(
+            (room) => Number(room.id) === Number(procurement.room_id),
+        ) ?? null
+    );
+};
+
+const getRoomName = (procurement: Procurement): string => {
+    const room = getRoom(procurement);
+
+    if (!room) {
+        return "Tidak ditentukan";
+    }
+
+    const code = typeof room.code === "string" ? room.code.trim() : "";
+
+    const name = typeof room.name === "string" ? room.name.trim() : "";
+
+    if (code && name) {
+        return `${code} - ${name}`;
+    }
+
+    return name || code || "Tidak ditentukan";
+};
+
+/*
+|--------------------------------------------------------------------------
+| Requester Helper
+|--------------------------------------------------------------------------
+*/
+
+const getRequesterName = (procurement: Procurement): string => {
+    return procurement.requester?.name ?? "Pengguna";
+};
+
+/*
+|--------------------------------------------------------------------------
+| Status Label
+|--------------------------------------------------------------------------
+*/
+
+const statusLabel = (status: ProcurementStatus): string => {
     switch (status) {
         case "pending":
             return "Menunggu Verifikasi";
@@ -262,7 +592,13 @@ const statusLabel = (status: ProcurementStatus) => {
     }
 };
 
-const typeLabel = (type: ProcurementType) => {
+/*
+|--------------------------------------------------------------------------
+| Type Label
+|--------------------------------------------------------------------------
+*/
+
+const typeLabel = (type: ProcurementType): string => {
     switch (type) {
         case "replacement":
             return "Penggantian";
@@ -275,7 +611,13 @@ const typeLabel = (type: ProcurementType) => {
     }
 };
 
-const statusClass = (status: ProcurementStatus) => {
+/*
+|--------------------------------------------------------------------------
+| Status Class
+|--------------------------------------------------------------------------
+*/
+
+const statusClass = (status: ProcurementStatus): string => {
     switch (status) {
         case "pending":
             return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400";
@@ -294,7 +636,13 @@ const statusClass = (status: ProcurementStatus) => {
     }
 };
 
-const typeClass = (type: ProcurementType) => {
+/*
+|--------------------------------------------------------------------------
+| Type Class
+|--------------------------------------------------------------------------
+*/
+
+const typeClass = (type: ProcurementType): string => {
     if (type === "replacement") {
         return "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-400";
     }
@@ -304,92 +652,18 @@ const typeClass = (type: ProcurementType) => {
 
 /*
 |--------------------------------------------------------------------------
-| Helpers
-|--------------------------------------------------------------------------
-*/
-
-const formatDate = (date?: string | null) => {
-    if (!date) {
-        return "-";
-    }
-
-    const parsed = new Date(date);
-
-    if (Number.isNaN(parsed.getTime())) {
-        return date;
-    }
-
-    return parsed.toLocaleDateString("id-ID", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-    });
-};
-
-const formatDateTime = (date?: string | null) => {
-    if (!date) {
-        return "-";
-    }
-
-    const parsed = new Date(date);
-
-    if (Number.isNaN(parsed.getTime())) {
-        return date;
-    }
-
-    return parsed.toLocaleString("id-ID", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-    });
-};
-
-const getFacultyName = (procurement: Procurement) => {
-    return (
-        procurement.faculty?.name ??
-        faculties.value.find(
-            (faculty) =>
-                Number(faculty.id) ===
-                Number(procurement.faculty_id),
-        )?.name ??
-        "-"
-    );
-};
-
-const getRoomName = (procurement: Procurement) => {
-    if (procurement.room) {
-        return procurement.room.name;
-    }
-
-    if (
-        procurement.room_id === null ||
-        procurement.room_id === undefined
-    ) {
-        return "Tidak ditentukan";
-    }
-
-    return (
-        rooms.value.find(
-            (room) =>
-                Number(room.id) ===
-                Number(procurement.room_id),
-        )?.name ?? "-"
-    );
-};
-
-const getRequesterName = (procurement: Procurement) => {
-    return procurement.requester?.name ?? "Pengguna";
-};
-
-/*
-|--------------------------------------------------------------------------
 | Search & Filter
 |--------------------------------------------------------------------------
 */
 
 let searchTimeout: ReturnType<typeof setTimeout> | undefined;
+
+const clearSearchTimeout = () => {
+    if (searchTimeout !== undefined) {
+        clearTimeout(searchTimeout);
+        searchTimeout = undefined;
+    }
+};
 
 const buildFilterQuery = (): Record<string, string> => {
     const query: Record<string, string> = {};
@@ -401,11 +675,11 @@ const buildFilterQuery = (): Record<string, string> => {
     }
 
     if (statusFilter.value !== "") {
-        query.status = statusFilter.value;
+        query.status = String(statusFilter.value);
     }
 
     if (typeFilter.value !== "") {
-        query.type = typeFilter.value;
+        query.type = String(typeFilter.value);
     }
 
     if (facultyFilter.value !== "") {
@@ -416,43 +690,38 @@ const buildFilterQuery = (): Record<string, string> => {
 };
 
 const applyFilters = () => {
+    clearSearchTimeout();
+
     isLoading.value = true;
 
-    router.get(
-        "/admin/procurements",
-        buildFilterQuery(),
-        {
-            preserveState: true,
-            preserveScroll: true,
-            replace: true,
+    router.get("/admin/procurements", buildFilterQuery(), {
+        preserveState: true,
+        preserveScroll: true,
+        replace: true,
 
-            onFinish: () => {
-                isLoading.value = false;
-            },
+        onError: (errors) => {
+            showToast(
+                "error",
+                getErrorMessage(errors, "Gagal memuat data pengadaan."),
+            );
         },
-    );
+
+        onFinish: () => {
+            isLoading.value = false;
+        },
+    });
 };
 
-/*
- * Search menggunakan debounce.
- */
 watch(searchQuery, () => {
-    if (searchTimeout) {
-        clearTimeout(searchTimeout);
-    }
+    clearSearchTimeout();
 
     searchTimeout = setTimeout(() => {
         applyFilters();
     }, 400);
 });
 
-/*
- * Reset semua filter.
- */
 const clearFilters = () => {
-    if (searchTimeout) {
-        clearTimeout(searchTimeout);
-    }
+    clearSearchTimeout();
 
     searchQuery.value = "";
     statusFilter.value = "";
@@ -469,6 +738,13 @@ const clearFilters = () => {
             preserveScroll: true,
             replace: true,
 
+            onError: (errors) => {
+                showToast(
+                    "error",
+                    getErrorMessage(errors, "Gagal mereset filter pengadaan."),
+                );
+            },
+
             onFinish: () => {
                 isLoading.value = false;
             },
@@ -478,20 +754,27 @@ const clearFilters = () => {
 
 /*
 |--------------------------------------------------------------------------
-| Create / Edit
+| Create
 |--------------------------------------------------------------------------
 */
 
 const openCreateModal = () => {
+    if (!canCreateProcurement.value) {
+        return;
+    }
+
     editingProcurement.value = null;
     isFormModalOpen.value = true;
 };
 
+/*
+|--------------------------------------------------------------------------
+| Edit
+|--------------------------------------------------------------------------
+*/
+
 const openEditModal = (procurement: Procurement) => {
-    /*
-     * Hanya procurement pending yang boleh diedit.
-     */
-    if (procurement.status !== "pending") {
+    if (!canEditProcurementRow(procurement)) {
         return;
     }
 
@@ -501,16 +784,14 @@ const openEditModal = (procurement: Procurement) => {
         faculty_id: procurement.faculty_id,
 
         room_id:
-            procurement.room_id !== undefined &&
-            procurement.room_id !== null
+            procurement.room_id !== undefined && procurement.room_id !== null
                 ? Number(procurement.room_id)
                 : null,
 
         item_name: procurement.item_name ?? "",
 
         quantity:
-            procurement.quantity !== undefined &&
-            procurement.quantity !== null
+            procurement.quantity !== undefined && procurement.quantity !== null
                 ? Number(procurement.quantity)
                 : 1,
 
@@ -518,8 +799,7 @@ const openEditModal = (procurement: Procurement) => {
 
         reason: procurement.reason ?? "",
 
-        requester_signature:
-            procurement.requester_signature ?? null,
+        requester_signature: procurement.requester_signature ?? null,
     };
 
     isFormModalOpen.value = true;
@@ -532,8 +812,13 @@ const closeFormModal = () => {
 
     isFormModalOpen.value = false;
     editingProcurement.value = null;
-    isFormProcessing.value = false;
 };
+
+/*
+|--------------------------------------------------------------------------
+| Save Procurement
+|--------------------------------------------------------------------------
+*/
 
 const handleSaveProcurement = (data: {
     faculty_id: number;
@@ -548,34 +833,39 @@ const handleSaveProcurement = (data: {
         return;
     }
 
-    isFormProcessing.value = true;
-
     /*
      * CREATE
      */
     if (!editingProcurement.value) {
-        router.post(
-            "/admin/procurements",
-            data,
-            {
-                preserveScroll: true,
+        if (!canCreateProcurement.value) {
+            return;
+        }
 
-                onSuccess: () => {
-                    closeFormModal();
-                },
+        isFormProcessing.value = true;
 
-                onError: (errors) => {
-                    console.error(
-                        "Gagal membuat pengajuan pengadaan:",
-                        errors,
-                    );
-                },
+        router.post("/admin/procurements", data, {
+            preserveScroll: true,
 
-                onFinish: () => {
-                    isFormProcessing.value = false;
-                },
+            onSuccess: () => {
+                isFormModalOpen.value = false;
+
+                editingProcurement.value = null;
             },
-        );
+
+            onError: (errors) => {
+                showToast(
+                    "error",
+                    getErrorMessage(
+                        errors,
+                        "Gagal membuat pengajuan pengadaan.",
+                    ),
+                );
+            },
+
+            onFinish: () => {
+                isFormProcessing.value = false;
+            },
+        });
 
         return;
     }
@@ -583,28 +873,37 @@ const handleSaveProcurement = (data: {
     /*
      * UPDATE
      */
-    router.put(
-        `/admin/procurements/${editingProcurement.value.id}`,
-        data,
-        {
-            preserveScroll: true,
+    const procurement = editingProcurement.value;
 
-            onSuccess: () => {
-                closeFormModal();
-            },
+    if (!canEditProcurementRow(procurement)) {
+        return;
+    }
 
-            onError: (errors) => {
-                console.error(
-                    "Gagal memperbarui pengajuan pengadaan:",
-                    errors,
-                );
-            },
+    isFormProcessing.value = true;
 
-            onFinish: () => {
-                isFormProcessing.value = false;
-            },
+    router.put(`/admin/procurements/${procurement.id}`, data, {
+        preserveScroll: true,
+
+        onSuccess: () => {
+            isFormModalOpen.value = false;
+
+            editingProcurement.value = null;
         },
-    );
+
+        onError: (errors) => {
+            showToast(
+                "error",
+                getErrorMessage(
+                    errors,
+                    "Gagal memperbarui pengajuan pengadaan.",
+                ),
+            );
+        },
+
+        onFinish: () => {
+            isFormProcessing.value = false;
+        },
+    });
 };
 
 /*
@@ -614,7 +913,24 @@ const handleSaveProcurement = (data: {
 */
 
 const openDetailModal = (procurement: Procurement) => {
-    selectedProcurement.value = procurement;
+    /*
+     * Resolve room terlebih dahulu.
+     *
+     * Ini penting karena data index bisa saja
+     * hanya mempunyai room_id tanpa relationship
+     * room yang lengkap.
+     */
+    const room = getRoom(procurement);
+
+    /*
+     * Kirim object yang sudah dinormalisasi
+     * ke DetailModal.
+     */
+    selectedProcurement.value = {
+        ...procurement,
+        room,
+    };
+
     isDetailModalOpen.value = true;
 };
 
@@ -631,20 +947,21 @@ const closeDetailModal = () => {
 
 const openApprovalModal = (procurement: Procurement) => {
     /*
-     * Hanya Super Admin yang boleh melakukan verifikasi.
+     * Approval hanya super admin.
      */
     if (!isSuperAdmin.value) {
         return;
     }
 
     /*
-     * Hanya status pending yang bisa diverifikasi.
+     * Hanya pending yang boleh diverifikasi.
      */
     if (procurement.status !== "pending") {
         return;
     }
 
     approvalProcurement.value = procurement;
+
     isApprovalModalOpen.value = true;
 };
 
@@ -655,7 +972,6 @@ const closeApprovalModal = () => {
 
     isApprovalModalOpen.value = false;
     approvalProcurement.value = null;
-    isApprovalProcessing.value = false;
 };
 
 const handleApproval = (data: {
@@ -671,6 +987,10 @@ const handleApproval = (data: {
         return;
     }
 
+    if (approvalProcurement.value.status !== "pending") {
+        return;
+    }
+
     if (isApprovalProcessing.value) {
         return;
     }
@@ -678,8 +998,10 @@ const handleApproval = (data: {
     isApprovalProcessing.value = true;
 
     const procurementId = approvalProcurement.value.id;
+
     const payload = {
         approver_signature: data.approver_signature,
+
         admin_note: data.admin_note,
     };
 
@@ -688,20 +1010,22 @@ const handleApproval = (data: {
             ? `/admin/procurements/${procurementId}/approve`
             : `/admin/procurements/${procurementId}/reject`;
 
-    const errorMessage =
+    const fallbackMessage =
         data.action === "approve"
-            ? "Gagal menyetujui pengadaan:"
-            : "Gagal menolak pengadaan:";
+            ? "Gagal menyetujui pengajuan pengadaan."
+            : "Gagal menolak pengajuan pengadaan.";
 
     router.post(endpoint, payload, {
         preserveScroll: true,
 
         onSuccess: () => {
-            closeApprovalModal();
+            isApprovalModalOpen.value = false;
+
+            approvalProcurement.value = null;
         },
 
         onError: (errors) => {
-            console.error(errorMessage, errors);
+            showToast("error", getErrorMessage(errors, fallbackMessage));
         },
 
         onFinish: () => {
@@ -717,58 +1041,138 @@ const handleApproval = (data: {
 */
 
 const openCompleteModal = (procurement: Procurement) => {
-    /*
-     * Hanya procurement approved yang dapat diselesaikan.
-     */
+    if (!canCompleteProcurement.value) {
+        return;
+    }
+
     if (procurement.status !== "approved") {
         return;
     }
 
-    completeProcurement.value = procurement;
-    isCompleteModalOpen.value = true;
+    confirmTitle.value = "Tandai Pengadaan Selesai?";
+
+    confirmMessage.value =
+        `Pengajuan "${procurement.item_name}" akan diubah menjadi status selesai. ` +
+        "Pastikan proses pengadaan sudah benar-benar selesai.";
+
+    confirmAction.value = () => {
+        if (isConfirmProcessing.value) {
+            return;
+        }
+
+        isConfirmProcessing.value = true;
+
+        router.post(
+            `/admin/procurements/${procurement.id}/complete`,
+            {},
+            {
+                preserveScroll: true,
+
+                onSuccess: () => {
+                    isConfirmModalOpen.value = false;
+
+                    confirmAction.value = null;
+                },
+
+                onError: (errors) => {
+                    showToast(
+                        "error",
+                        getErrorMessage(
+                            errors,
+                            "Gagal menyelesaikan pengadaan.",
+                        ),
+                    );
+                },
+
+                onFinish: () => {
+                    isConfirmProcessing.value = false;
+                },
+            },
+        );
+    };
+
+    isConfirmModalOpen.value = true;
 };
 
-const closeCompleteModal = () => {
-    if (isCompleting.value) {
+const closeConfirmModal = () => {
+    if (isConfirmProcessing.value) {
         return;
     }
 
-    isCompleteModalOpen.value = false;
-    completeProcurement.value = null;
+    isConfirmModalOpen.value = false;
+    confirmAction.value = null;
 };
 
-const executeComplete = () => {
-    if (
-        !completeProcurement.value ||
-        isCompleting.value
-    ) {
+const executeConfirm = () => {
+    if (!confirmAction.value || isConfirmProcessing.value) {
         return;
     }
 
-    isCompleting.value = true;
+    confirmAction.value();
+};
 
-    router.post(
-        `/admin/procurements/${completeProcurement.value.id}/complete`,
-        {},
-        {
-            preserveScroll: true,
+/*
+|--------------------------------------------------------------------------
+| Delete
+|--------------------------------------------------------------------------
+*/
 
-            onSuccess: () => {
-                closeCompleteModal();
-            },
+const openDeleteModal = (procurement: Procurement) => {
+    if (!canDeleteProcurementRow(procurement)) {
+        return;
+    }
 
-            onError: (errors) => {
-                console.error(
-                    "Gagal menyelesaikan pengadaan:",
-                    errors,
-                );
-            },
+    deleteTarget.value = procurement;
+    isDeleteModalOpen.value = true;
+};
 
-            onFinish: () => {
-                isCompleting.value = false;
-            },
+const closeDeleteModal = () => {
+    if (isDeleteProcessing.value) {
+        return;
+    }
+
+    isDeleteModalOpen.value = false;
+    deleteTarget.value = null;
+};
+
+const executeDelete = () => {
+    if (!deleteTarget.value || isDeleteProcessing.value) {
+        return;
+    }
+
+    const procurement = deleteTarget.value;
+
+    /*
+     * Re-check authorization tepat sebelum
+     * request dikirim.
+     */
+    if (!canDeleteProcurementRow(procurement)) {
+        closeDeleteModal();
+        return;
+    }
+
+    isDeleteProcessing.value = true;
+
+    router.delete(`/admin/procurements/${procurement.id}`, {
+        preserveScroll: true,
+
+        onSuccess: () => {
+            isDeleteModalOpen.value = false;
+
+            deleteTarget.value = null;
         },
-    );
+
+        onError: (errors) => {
+            showToast(
+                "error",
+                getErrorMessage(errors, "Gagal menghapus pengajuan pengadaan."),
+            );
+        },
+
+        onFinish: () => {
+            isDeleteProcessing.value = false;
+        },
+    });
 };
 
 /*
@@ -778,11 +1182,22 @@ const executeComplete = () => {
 */
 
 const printProcurement = (procurement: Procurement) => {
-    window.open(
+    if (!procurement?.id) {
+        return;
+    }
+
+    const printWindow = window.open(
         `/admin/procurements/${procurement.id}/print`,
         "_blank",
         "noopener,noreferrer",
     );
+
+    if (!printWindow) {
+        showToast(
+            "warning",
+            "Popup diblokir oleh browser. Izinkan popup untuk mencetak.",
+        );
+    }
 };
 
 /*
@@ -792,29 +1207,35 @@ const printProcurement = (procurement: Procurement) => {
 */
 
 const goToPage = (page: number) => {
-    const currentPage =
-        props.procurements?.current_page ?? 1;
+    const currentPage = props.procurements?.current_page ?? 1;
 
-    const lastPage =
-        props.procurements?.last_page ?? 1;
+    const lastPage = props.procurements?.last_page ?? 1;
 
-    if (
-        page < 1 ||
-        page > lastPage ||
-        page === currentPage
-    ) {
+    if (page < 1 || page > lastPage || page === currentPage) {
         return;
     }
+
+    clearSearchTimeout();
 
     isLoading.value = true;
 
     router.get(
         "/admin/procurements",
-        { ...buildFilterQuery(), page },
+        {
+            ...buildFilterQuery(),
+            page: String(page),
+        },
         {
             preserveState: true,
             preserveScroll: true,
             replace: true,
+
+            onError: (errors) => {
+                showToast(
+                    "error",
+                    getErrorMessage(errors, "Gagal memuat halaman pengadaan."),
+                );
+            },
 
             onFinish: () => {
                 isLoading.value = false;
@@ -824,15 +1245,14 @@ const goToPage = (page: number) => {
 };
 
 const visiblePages = computed(() => {
-    const current =
-        props.procurements?.current_page ?? 1;
+    const current = props.procurements?.current_page ?? 1;
 
-    const last =
-        props.procurements?.last_page ?? 1;
+    const last = props.procurements?.last_page ?? 1;
 
     const pages: number[] = [];
 
     const start = Math.max(1, current - 2);
+
     const end = Math.min(last, current + 2);
 
     for (let page = start; page <= end; page++) {
@@ -849,8 +1269,11 @@ const visiblePages = computed(() => {
 */
 
 onBeforeUnmount(() => {
-    if (searchTimeout) {
-        clearTimeout(searchTimeout);
+    clearSearchTimeout();
+
+    if (toastTimeout !== undefined) {
+        clearTimeout(toastTimeout);
+        toastTimeout = undefined;
     }
 });
 </script>
@@ -859,7 +1282,10 @@ onBeforeUnmount(() => {
     <Head title="Pengadaan Barang - Sistem Inventory" />
 
     <div class="relative flex flex-1 flex-col gap-6 overflow-hidden p-4 md:p-6">
-        <!-- Animated Background -->
+        <!-- ============================================================ -->
+        <!-- BACKGROUND -->
+        <!-- ============================================================ -->
+
         <div class="pointer-events-none absolute inset-0 overflow-hidden">
             <div
                 class="animate-blob absolute -left-24 -top-24 h-72 w-72 rounded-full bg-[#f53003]/10 blur-3xl dark:bg-[#FF4433]/10 sm:h-96 sm:w-96"
@@ -874,13 +1300,16 @@ onBeforeUnmount(() => {
             ></div>
         </div>
 
-        <!-- Main Content -->
+        <!-- ============================================================ -->
+        <!-- MAIN -->
+        <!-- ============================================================ -->
+
         <div
             class="relative z-10 flex flex-1 flex-col gap-6 opacity-100 transition-opacity duration-750 starting:opacity-0"
         >
-            <!-- ========================================================= -->
+            <!-- ======================================================== -->
             <!-- STATS -->
-            <!-- ========================================================= -->
+            <!-- ======================================================== -->
 
             <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                 <!-- Total -->
@@ -1118,9 +1547,9 @@ onBeforeUnmount(() => {
                 </div>
             </div>
 
-            <!-- ========================================================= -->
+            <!-- ======================================================== -->
             <!-- MAIN SECTION -->
-            <!-- ========================================================= -->
+            <!-- ======================================================== -->
 
             <div
                 class="flex flex-1 flex-col rounded-xl border border-black/5 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-[#161615]"
@@ -1143,6 +1572,7 @@ onBeforeUnmount(() => {
                     </div>
 
                     <button
+                        v-if="canCreateProcurement"
                         type="button"
                         @click="openCreateModal"
                         class="flex items-center justify-center gap-2 rounded-lg bg-[#1b1b18] px-4 py-2.5 text-xs font-medium text-white transition hover:bg-black dark:bg-[#EDEDEC] dark:text-[#1c1c1a] dark:hover:bg-white"
@@ -1166,7 +1596,10 @@ onBeforeUnmount(() => {
                     </button>
                 </div>
 
-                <!-- Filters -->
+                <!-- ==================================================== -->
+                <!-- FILTER -->
+                <!-- ==================================================== -->
+
                 <div class="mb-6">
                     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         <!-- Search -->
@@ -1240,12 +1673,13 @@ onBeforeUnmount(() => {
                                 :key="faculty.id"
                                 :value="String(faculty.id)"
                             >
-                                {{ faculty.code }} - {{ faculty.name }}
+                                {{ faculty.code }} -
+                                {{ faculty.name }}
                             </option>
                         </select>
                     </div>
 
-                    <!-- Filter Summary + Reset -->
+                    <!-- Filter Summary -->
                     <div class="mt-3 flex items-center justify-between">
                         <p class="text-xs text-[#706f6c] dark:text-[#A1A09A]">
                             Menampilkan
@@ -1255,6 +1689,7 @@ onBeforeUnmount(() => {
                                 {{ totalProcurements }}
                             </span>
                             pengajuan
+
                             <span v-if="hasActiveFilters">
                                 &middot; filter sedang aktif
                             </span>
@@ -1271,9 +1706,9 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
 
-                <!-- ===================================================== -->
-                <!-- TABLE -->
-                <!-- ===================================================== -->
+                <!-- ==================================================== -->
+                <!-- DATA -->
+                <!-- ==================================================== -->
 
                 <div class="flex-1">
                     <!-- Loading -->
@@ -1305,7 +1740,7 @@ onBeforeUnmount(() => {
                         </div>
                     </div>
 
-                    <!-- Desktop Table -->
+                    <!-- Table -->
                     <div
                         v-else-if="procurements.length > 0"
                         class="overflow-x-auto rounded-xl border border-[#e3e3e0] dark:border-[#3E3E3A]"
@@ -1392,6 +1827,7 @@ onBeforeUnmount(() => {
                                                         stroke-linejoin="round"
                                                         d="M20.25 7.5v9a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 16.5v-9A2.25 2.25 0 0 1 6 5.25h12a2.25 2.25 0 0 1 2.25 2.25Z"
                                                     />
+
                                                     <path
                                                         stroke-linecap="round"
                                                         stroke-linejoin="round"
@@ -1432,43 +1868,57 @@ onBeforeUnmount(() => {
                                     <!-- Room -->
                                     <td class="px-4 py-4">
                                         <div
-                                            class="max-w-[150px] truncate text-[#706f6c] dark:text-[#A1A09A]"
+                                            class="max-w-[180px] truncate text-[#706f6c] dark:text-[#A1A09A]"
                                         >
                                             {{ getRoomName(procurement) }}
                                         </div>
 
-                                        <div
-                                            v-if="
-                                                procurement.room?.building ||
-                                                procurement.room?.floor
-                                            "
-                                            class="mt-1 text-[10px] text-[#A1A09A]"
-                                        >
-                                            <span
+                                        <template v-if="getRoom(procurement)">
+                                            <div
                                                 v-if="
-                                                    procurement.room?.building
+                                                    getRoom(procurement)
+                                                        ?.building ||
+                                                    getRoom(procurement)?.floor
                                                 "
+                                                class="mt-1 text-[10px] text-[#A1A09A]"
                                             >
-                                                {{ procurement.room.building }}
-                                            </span>
+                                                <span
+                                                    v-if="
+                                                        getRoom(procurement)
+                                                            ?.building
+                                                    "
+                                                >
+                                                    {{
+                                                        getRoom(procurement)
+                                                            ?.building
+                                                    }}
+                                                </span>
 
-                                            <span
-                                                v-if="
-                                                    procurement.room
-                                                        ?.building &&
-                                                    procurement.room?.floor
-                                                "
-                                            >
-                                                &middot;
-                                            </span>
+                                                <span
+                                                    v-if="
+                                                        getRoom(procurement)
+                                                            ?.building &&
+                                                        getRoom(procurement)
+                                                            ?.floor
+                                                    "
+                                                >
+                                                    &middot;
+                                                </span>
 
-                                            <span
-                                                v-if="procurement.room?.floor"
-                                            >
-                                                Lt.
-                                                {{ procurement.room.floor }}
-                                            </span>
-                                        </div>
+                                                <span
+                                                    v-if="
+                                                        getRoom(procurement)
+                                                            ?.floor
+                                                    "
+                                                >
+                                                    Lt.
+                                                    {{
+                                                        getRoom(procurement)
+                                                            ?.floor
+                                                    }}
+                                                </span>
+                                            </div>
+                                        </template>
                                     </td>
 
                                     <!-- Quantity -->
@@ -1540,6 +1990,7 @@ onBeforeUnmount(() => {
                                                         stroke-linejoin="round"
                                                         d="M2.036 12.322a1.012 1.012 0 0 1 0-.644C3.423 7.51 7.36 4.5 12 4.5c4.64 0 8.577 3.01 9.964 7.178.07.21.07.434 0 .644C20.577 16.49 16.64 19.5 12 19.5c-4.64 0-8.577-3.01-9.964-7.178Z"
                                                     />
+
                                                     <path
                                                         stroke-linecap="round"
                                                         stroke-linejoin="round"
@@ -1552,7 +2003,9 @@ onBeforeUnmount(() => {
                                             <button
                                                 type="button"
                                                 @click="
-                                                    printProcurement(procurement)
+                                                    printProcurement(
+                                                        procurement,
+                                                    )
                                                 "
                                                 class="rounded-lg border border-[#e3e3e0] bg-white p-1.5 text-[#706f6c] transition hover:text-[#1b1b18] dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#A1A09A] dark:hover:text-[#EDEDEC]"
                                                 title="Cetak"
@@ -1576,8 +2029,9 @@ onBeforeUnmount(() => {
                                             <!-- Edit -->
                                             <button
                                                 v-if="
-                                                    procurement.status ===
-                                                    'pending'
+                                                    canEditProcurementRow(
+                                                        procurement,
+                                                    )
                                                 "
                                                 type="button"
                                                 @click="
@@ -1585,6 +2039,7 @@ onBeforeUnmount(() => {
                                                 "
                                                 class="rounded-lg border border-[#e3e3e0] bg-white p-1.5 text-[#706f6c] transition hover:text-[#f53003] dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#A1A09A] dark:hover:text-[#FF4433]"
                                                 title="Edit Pengajuan"
+                                                aria-label="Edit Pengajuan"
                                             >
                                                 <svg
                                                     xmlns="http://www.w3.org/2000/svg"
@@ -1598,6 +2053,38 @@ onBeforeUnmount(() => {
                                                         stroke-linecap="round"
                                                         stroke-linejoin="round"
                                                         d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10"
+                                                    />
+                                                </svg>
+                                            </button>
+
+                                            <!-- Delete -->
+                                            <button
+                                                v-if="
+                                                    canDeleteProcurementRow(
+                                                        procurement,
+                                                    )
+                                                "
+                                                type="button"
+                                                @click="
+                                                    openDeleteModal(procurement)
+                                                "
+                                                :disabled="isDeleteProcessing"
+                                                class="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-600 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/50"
+                                                title="Hapus Pengajuan"
+                                                aria-label="Hapus Pengajuan"
+                                            >
+                                                <svg
+                                                    xmlns="http://www.w3.org/2000/svg"
+                                                    fill="none"
+                                                    viewBox="0 0 24 24"
+                                                    stroke-width="1.5"
+                                                    stroke="currentColor"
+                                                    class="h-4 w-4"
+                                                >
+                                                    <path
+                                                        stroke-linecap="round"
+                                                        stroke-linejoin="round"
+                                                        d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12.856 0c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0C8.91 2.13 8 3.114 8 4.294v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
                                                     />
                                                 </svg>
                                             </button>
@@ -1637,8 +2124,9 @@ onBeforeUnmount(() => {
                                             <!-- Complete -->
                                             <button
                                                 v-if="
+                                                    canCompleteProcurement &&
                                                     procurement.status ===
-                                                    'approved'
+                                                        'approved'
                                                 "
                                                 type="button"
                                                 @click="
@@ -1692,6 +2180,7 @@ onBeforeUnmount(() => {
                                     stroke-linejoin="round"
                                     d="M20.25 7.5v9a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25v-9A2.25 2.25 0 0 1 6 5.25h12a2.25 2.25 0 0 1 2.25 2.25Z"
                                 />
+
                                 <path
                                     stroke-linecap="round"
                                     stroke-linejoin="round"
@@ -1717,7 +2206,7 @@ onBeforeUnmount(() => {
                         </p>
 
                         <button
-                            v-if="!hasActiveFilters"
+                            v-if="canCreateProcurement"
                             type="button"
                             @click="openCreateModal"
                             class="mt-5 rounded-lg bg-[#1b1b18] px-4 py-2 text-xs font-medium text-white transition hover:bg-black dark:bg-[#EDEDEC] dark:text-[#1c1c1a] dark:hover:bg-white"
@@ -1727,9 +2216,7 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
 
-                <!-- ===================================================== -->
                 <!-- PAGINATION -->
-                <!-- ===================================================== -->
 
                 <div
                     v-if="
@@ -1819,19 +2306,11 @@ onBeforeUnmount(() => {
         @submit="handleSaveProcurement"
     />
 
-    <!-- ================================================================ -->
-    <!-- PROCUREMENT DETAIL MODAL -->
-    <!-- ================================================================ -->
-
     <ProcurementDetailModal
         :show="isDetailModalOpen"
         :procurement="selectedProcurement"
         @close="closeDetailModal"
     />
-
-    <!-- ================================================================ -->
-    <!-- PROCUREMENT APPROVAL MODAL -->
-    <!-- ================================================================ -->
 
     <ProcurementApprovalModal
         :show="isApprovalModalOpen"
@@ -1840,10 +2319,6 @@ onBeforeUnmount(() => {
         @close="closeApprovalModal"
         @submit="handleApproval"
     />
-
-    <!-- ================================================================ -->
-    <!-- COMPLETE CONFIRMATION MODAL -->
-    <!-- ================================================================ -->
 
     <Teleport to="body">
         <Transition
@@ -1855,18 +2330,19 @@ onBeforeUnmount(() => {
             leave-to-class="opacity-0"
         >
             <div
-                v-if="isCompleteModalOpen"
+                v-if="isConfirmModalOpen"
                 class="fixed inset-0 z-[100] flex items-center justify-center p-4"
                 role="dialog"
                 aria-modal="true"
+                aria-labelledby="procurement-confirm-title"
+                @keydown.esc="closeConfirmModal"
             >
                 <!-- Backdrop -->
                 <div
                     class="absolute inset-0 bg-black/50 backdrop-blur-sm dark:bg-black/70"
-                    @click="closeCompleteModal"
+                    @click="closeConfirmModal"
                 ></div>
 
-                <!-- Modal -->
                 <Transition
                     appear
                     enter-active-class="transition duration-200 ease-out"
@@ -1877,10 +2353,11 @@ onBeforeUnmount(() => {
                     leave-to-class="scale-95 opacity-0"
                 >
                     <div
-                        v-if="isCompleteModalOpen"
+                        v-if="isConfirmModalOpen"
                         class="relative w-full max-w-md overflow-hidden rounded-2xl border border-[#e3e3e0] bg-white shadow-2xl dark:border-[#3E3E3A] dark:bg-[#161615]"
                     >
                         <div class="p-6">
+                            <!-- Icon -->
                             <div
                                 class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
                             >
@@ -1900,42 +2377,50 @@ onBeforeUnmount(() => {
                                 </svg>
                             </div>
 
+                            <!-- Content -->
                             <div class="mt-4 text-center">
                                 <h3
+                                    id="procurement-confirm-title"
                                     class="text-base font-semibold text-[#1b1b18] dark:text-[#EDEDEC]"
                                 >
-                                    Tandai Pengadaan Selesai?
+                                    {{ confirmTitle }}
                                 </h3>
 
                                 <p
                                     class="mt-2 text-sm leading-6 text-[#706f6c] dark:text-[#A1A09A]"
                                 >
-                                    Pengajuan
-                                    <span
-                                        class="font-semibold text-[#1b1b18] dark:text-[#EDEDEC]"
-                                    >
-                                        {{ completeProcurement?.item_name }}
-                                    </span>
-                                    akan diubah menjadi status
-                                    <span
-                                        class="font-semibold text-emerald-600 dark:text-emerald-400"
-                                    >
-                                        selesai
-                                    </span>
-                                    .
+                                    {{ confirmMessage }}
                                 </p>
 
+                                <!-- Information -->
                                 <div
                                     class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-left dark:border-emerald-900/50 dark:bg-emerald-950/20"
                                 >
-                                    <p
-                                        class="text-xs leading-5 text-emerald-700 dark:text-emerald-400"
-                                    >
-                                        Status ini digunakan untuk menandai
-                                        bahwa proses pengadaan sudah selesai
-                                        dilakukan. Data inventaris tidak
-                                        otomatis dibuat oleh aksi ini.
-                                    </p>
+                                    <div class="flex gap-3">
+                                        <svg
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            fill="none"
+                                            viewBox="0 0 24 24"
+                                            stroke-width="1.8"
+                                            stroke="currentColor"
+                                            class="mt-0.5 h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400"
+                                        >
+                                            <path
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                                d="M13 16h-1v-4h-1m1-4h.01M12 20.5a8.5 8.5 0 1 1 0-17 8.5 8.5 0 0 1 0 17Z"
+                                            />
+                                        </svg>
+
+                                        <p
+                                            class="text-xs leading-5 text-emerald-700 dark:text-emerald-400"
+                                        >
+                                            Status ini menandakan bahwa proses
+                                            pengadaan sudah selesai dilakukan.
+                                            Data inventaris tidak dibuat secara
+                                            otomatis oleh aksi ini.
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1944,25 +2429,27 @@ onBeforeUnmount(() => {
                         <div
                             class="flex flex-col-reverse gap-2 border-t border-[#e3e3e0] bg-[#fafafa] p-4 sm:flex-row sm:justify-end dark:border-[#3E3E3A] dark:bg-[#111110]"
                         >
+                            <!-- Cancel -->
                             <button
                                 type="button"
-                                :disabled="isCompleting"
-                                @click="closeCompleteModal"
+                                :disabled="isConfirmProcessing"
+                                @click="closeConfirmModal"
                                 class="w-full rounded-lg border border-[#e3e3e0] bg-white px-4 py-2.5 text-sm font-medium text-[#1b1b18] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#EDEDEC] dark:hover:bg-[#20201e]"
                             >
                                 Batal
                             </button>
 
+                            <!-- Confirm -->
                             <button
                                 type="button"
-                                :disabled="isCompleting"
-                                @click="executeComplete"
+                                :disabled="isConfirmProcessing"
+                                @click="executeConfirm"
                                 class="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto dark:bg-emerald-600 dark:hover:bg-emerald-500"
                             >
                                 <svg
-                                    v-if="isCompleting"
-                                    class="h-4 w-4 animate-spin"
+                                    v-if="isConfirmProcessing"
                                     xmlns="http://www.w3.org/2000/svg"
+                                    class="h-4 w-4 animate-spin"
                                     fill="none"
                                     viewBox="0 0 24 24"
                                 >
@@ -1983,7 +2470,7 @@ onBeforeUnmount(() => {
                                 </svg>
 
                                 {{
-                                    isCompleting
+                                    isConfirmProcessing
                                         ? "Memproses..."
                                         : "Ya, Tandai Selesai"
                                 }}
@@ -1993,6 +2480,142 @@ onBeforeUnmount(() => {
                 </Transition>
             </div>
         </Transition>
+    </Teleport>
+
+    <!-- Delete Confirmation Modal -->
+    <Teleport to="body">
+        <div
+            v-if="isDeleteModalOpen"
+            class="fixed inset-0 z-[100] flex items-center justify-center p-4"
+            role="dialog"
+            aria-modal="true"
+            @keydown.esc="closeDeleteModal"
+        >
+            <!-- Backdrop -->
+            <div
+                class="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                @click="closeDeleteModal"
+            ></div>
+
+            <!-- Modal -->
+            <div
+                class="relative w-full max-w-md overflow-hidden rounded-2xl border border-[#e3e3e0] bg-white shadow-2xl dark:border-[#3E3E3A] dark:bg-[#161615]"
+            >
+                <!-- Header -->
+                <div
+                    class="border-b border-[#e3e3e0] px-6 py-5 dark:border-[#3E3E3A]"
+                >
+                    <div class="flex items-start gap-4">
+                        <!-- Warning Icon -->
+                        <div
+                            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600 dark:bg-red-950/40 dark:text-red-400"
+                        >
+                            <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke-width="1.5"
+                                stroke="currentColor"
+                                class="h-6 w-6"
+                            >
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"
+                                />
+                            </svg>
+                        </div>
+
+                        <div class="min-w-0 flex-1">
+                            <h3
+                                class="text-base font-semibold text-[#1b1b18] dark:text-[#EDEDEC]"
+                            >
+                                Hapus Pengajuan?
+                            </h3>
+
+                            <p
+                                class="mt-1 text-sm leading-6 text-[#706f6c] dark:text-[#A1A09A]"
+                            >
+                                Apakah kamu yakin ingin menghapus pengajuan ini?
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Content -->
+                <div class="px-6 py-5">
+                    <div
+                        v-if="deleteTarget"
+                        class="rounded-xl border border-red-100 bg-red-50 p-4 dark:border-red-900/40 dark:bg-red-950/20"
+                    >
+                        <p
+                            class="text-sm font-medium text-red-800 dark:text-red-300"
+                        >
+                            {{ deleteTarget.item_name }}
+                        </p>
+
+                        <p class="mt-1 text-xs text-red-600 dark:text-red-400">
+                            Jumlah:
+                            {{ deleteTarget.quantity }}
+                            ·
+                            {{ typeLabel(deleteTarget.type) }}
+                        </p>
+                    </div>
+
+                    <p
+                        class="mt-4 text-sm leading-6 text-[#706f6c] dark:text-[#A1A09A]"
+                    >
+                        Data yang dihapus tidak dapat dikembalikan. Pastikan
+                        pengajuan yang dipilih memang sudah tidak diperlukan.
+                    </p>
+                </div>
+
+                <!-- Footer -->
+                <div
+                    class="flex items-center justify-end gap-3 border-t border-[#e3e3e0] px-6 py-4 dark:border-[#3E3E3A]"
+                >
+                    <button
+                        type="button"
+                        @click="closeDeleteModal"
+                        :disabled="isDeleteProcessing"
+                        class="rounded-lg border border-[#e3e3e0] bg-white px-4 py-2 text-sm font-medium text-[#1b1b18] transition hover:bg-[#f5f5f3] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#EDEDEC] dark:hover:bg-[#1f1f1e]"
+                    >
+                        Batal
+                    </button>
+
+                    <button
+                        type="button"
+                        @click="executeDelete"
+                        :disabled="isDeleteProcessing"
+                        class="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-red-500 dark:hover:bg-red-600"
+                    >
+                        <svg
+                            v-if="isDeleteProcessing"
+                            class="h-4 w-4 animate-spin"
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                        >
+                            <circle
+                                class="opacity-25"
+                                cx="12"
+                                cy="12"
+                                r="10"
+                                stroke="currentColor"
+                                stroke-width="4"
+                            />
+                            <path
+                                class="opacity-75"
+                                fill="currentColor"
+                                d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4Z"
+                            />
+                        </svg>
+
+                        {{ isDeleteProcessing ? "Menghapus..." : "Ya, Hapus" }}
+                    </button>
+                </div>
+            </div>
+        </div>
     </Teleport>
 </template>
 

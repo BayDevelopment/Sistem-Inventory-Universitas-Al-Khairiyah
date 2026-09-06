@@ -9,12 +9,15 @@ return new class extends Migration
     /**
      * Run the migrations.
      */
-    public function up(): void {
+    public function up(): void
+    {
         Schema::create('procurements', function (Blueprint $table) {
             $table->id();
             $table->foreignId('faculty_id')->constrained('faculties')->onDelete('cascade');
             $table->foreignId('requested_by')->constrained('users')->onDelete('cascade'); // Admin Fakultas
-            $table->foreignId('room_id')->nullable()->constrained('rooms')->onDelete('cascade');
+            $table->foreignId('room_id')
+                ->constrained('rooms')
+                ->onDelete('cascade');
             $table->string('item_name');
             $table->integer('quantity');
             $table->enum('type', ['replacement', 'new_item']); // Penggantian barang rusak / Barang baru
@@ -34,7 +37,8 @@ return new class extends Migration
         });
     }
 
-    public function down(): void {
+    public function down(): void
+    {
         Schema::dropIfExists('procurements');
     }
 };
