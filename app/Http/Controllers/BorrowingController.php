@@ -117,24 +117,6 @@ class BorrowingController extends Controller
 
         $faculties = $facultiesQuery->get();
 
-        /*
-        |--------------------------------------------------------------------------
-        | Filter Availability
-        |--------------------------------------------------------------------------
-        |
-        | Digunakan hanya untuk informasi frontend.
-        |
-        | JANGAN membuang inventory yang memiliki booking.
-        |
-        | Contoh:
-        |
-        | Asset 01:
-        | 10-12 Sep -> approved
-        |
-        | User tetap boleh memilih Asset 01 untuk:
-        | 15-17 Sep.
-        |
-        */
 
         $availabilityValidated = $request->validate([
             'borrow_date' => [
@@ -156,20 +138,6 @@ class BorrowingController extends Controller
         $expectedReturnDate =
             $availabilityValidated['expected_return_date']
             ?? null;
-
-        /*
-        |--------------------------------------------------------------------------
-        | Data Inventaris Yang Bisa Dipinjam
-        |--------------------------------------------------------------------------
-        |
-        | Semua inventory yang secara fisik layak dipinjam dikirim.
-        |
-        | Availability berdasarkan tanggal akan ditangani oleh:
-        |
-        | 1. Frontend -> disabled / keterangan
-        | 2. Backend -> validasi final
-        |
-        */
 
         $roomInventoriesQuery = RoomInventory::query()
             ->with([
@@ -250,8 +218,8 @@ class BorrowingController extends Controller
 
         $roomInventories =
             $roomInventoriesQuery
-                ->orderBy('asset_code')
-                ->get();
+            ->orderBy('asset_code')
+            ->get();
 
         /*
         |--------------------------------------------------------------------------
@@ -263,20 +231,23 @@ class BorrowingController extends Controller
             'Admin/Borrowings/Index',
             [
                 'borrowings' =>
-                    $borrowings,
+                $borrowings,
 
                 'faculties' =>
-                    $faculties,
+                $faculties,
 
                 'roomInventories' =>
-                    $roomInventories,
+                $roomInventories,
+
+                'canDelete' =>
+                $user->role === 'super_admin',
 
                 'availability' => [
                     'borrow_date' =>
-                        $borrowDate,
+                    $borrowDate,
 
                     'expected_return_date' =>
-                        $expectedReturnDate,
+                    $expectedReturnDate,
                 ],
             ]
         );
@@ -367,22 +338,20 @@ class BorrowingController extends Controller
 
                     $roomInventory =
                         RoomInventory::query()
-                            ->with([
-                                'room:id,name,code,faculty_id,is_active',
-                                'item:id,name',
-                            ])
-                            ->whereKey(
-                                $validated[
-                                    'room_inventory_id'
-                                ]
-                            )
-                            ->lockForUpdate()
-                            ->first();
+                        ->with([
+                            'room:id,name,code,faculty_id,is_active',
+                            'item:id,name',
+                        ])
+                        ->whereKey(
+                            $validated['room_inventory_id']
+                        )
+                        ->lockForUpdate()
+                        ->first();
 
                     if (!$roomInventory) {
                         throw ValidationException::withMessages([
                             'room_inventory_id' =>
-                                'Inventaris tidak ditemukan.',
+                            'Inventaris tidak ditemukan.',
                         ]);
                     }
 
@@ -436,9 +405,7 @@ class BorrowingController extends Controller
 
                     $signaturePath =
                         $this->storeSignature(
-                            $validated[
-                                'applicant_signature'
-                            ] ?? null,
+                            $validated['applicant_signature'] ?? null,
                             'applicant_signature'
                         );
 
@@ -450,41 +417,35 @@ class BorrowingController extends Controller
 
                     Borrowing::create([
                         'user_id' =>
-                            $user->id,
+                        $user->id,
 
                         'faculty_id' =>
-                            $validated[
-                                'faculty_id'
-                            ],
+                        $validated['faculty_id'],
 
                         'room_inventory_id' =>
-                            $roomInventory->id,
+                        $roomInventory->id,
 
                         'borrow_date' =>
-                            $validated[
-                                'borrow_date'
-                            ],
+                        $validated['borrow_date'],
 
                         'expected_return_date' =>
-                            $validated[
-                                'expected_return_date'
-                            ],
+                        $validated['expected_return_date'],
 
                         'purpose' =>
-                            trim(
-                                $validated['purpose']
-                            ),
+                        trim(
+                            $validated['purpose']
+                        ),
 
                         'applicant_signature' =>
-                            $signaturePath,
+                        $signaturePath,
 
                         'signed_at' =>
-                            $signaturePath
-                                ? now()
-                                : null,
+                        $signaturePath
+                            ? now()
+                            : null,
 
                         'status' =>
-                            self::PENDING_STATUS,
+                        self::PENDING_STATUS,
                     ]);
                 }
             );
@@ -504,10 +465,10 @@ class BorrowingController extends Controller
                 'toast',
                 [
                     'type' =>
-                        'success',
+                    'success',
 
                     'message' =>
-                        'Peminjaman berhasil diajukan dan menunggu persetujuan.',
+                    'Peminjaman berhasil diajukan dan menunggu persetujuan.',
                 ]
             );
     }
@@ -562,7 +523,7 @@ class BorrowingController extends Controller
         ) {
             throw ValidationException::withMessages([
                 'borrowing' =>
-                    'Peminjaman yang sudah diproses tidak dapat diedit.',
+                'Peminjaman yang sudah diproses tidak dapat diedit.',
             ]);
         }
 
@@ -640,16 +601,16 @@ class BorrowingController extends Controller
 
                     $lockedBorrowing =
                         Borrowing::query()
-                            ->whereKey(
-                                $borrowing->id
-                            )
-                            ->lockForUpdate()
-                            ->first();
+                        ->whereKey(
+                            $borrowing->id
+                        )
+                        ->lockForUpdate()
+                        ->first();
 
                     if (!$lockedBorrowing) {
                         throw ValidationException::withMessages([
                             'borrowing' =>
-                                'Data peminjaman tidak ditemukan.',
+                            'Data peminjaman tidak ditemukan.',
                         ]);
                     }
 
@@ -659,7 +620,7 @@ class BorrowingController extends Controller
                     ) {
                         throw ValidationException::withMessages([
                             'borrowing' =>
-                                'Peminjaman yang sudah diproses tidak dapat diedit.',
+                            'Peminjaman yang sudah diproses tidak dapat diedit.',
                         ]);
                     }
 
@@ -671,22 +632,20 @@ class BorrowingController extends Controller
 
                     $roomInventory =
                         RoomInventory::query()
-                            ->with([
-                                'room:id,name,code,faculty_id,is_active',
-                                'item:id,name',
-                            ])
-                            ->whereKey(
-                                $validated[
-                                    'room_inventory_id'
-                                ]
-                            )
-                            ->lockForUpdate()
-                            ->first();
+                        ->with([
+                            'room:id,name,code,faculty_id,is_active',
+                            'item:id,name',
+                        ])
+                        ->whereKey(
+                            $validated['room_inventory_id']
+                        )
+                        ->lockForUpdate()
+                        ->first();
 
                     if (!$roomInventory) {
                         throw ValidationException::withMessages([
                             'room_inventory_id' =>
-                                'Inventaris tidak ditemukan.',
+                            'Inventaris tidak ditemukan.',
                         ]);
                     }
 
@@ -716,29 +675,21 @@ class BorrowingController extends Controller
 
                     $data = [
                         'faculty_id' =>
-                            $validated[
-                                'faculty_id'
-                            ],
+                        $validated['faculty_id'],
 
                         'room_inventory_id' =>
-                            $roomInventory->id,
+                        $roomInventory->id,
 
                         'borrow_date' =>
-                            $validated[
-                                'borrow_date'
-                            ],
+                        $validated['borrow_date'],
 
                         'expected_return_date' =>
-                            $validated[
-                                'expected_return_date'
-                            ],
+                        $validated['expected_return_date'],
 
                         'purpose' =>
-                            trim(
-                                $validated[
-                                    'purpose'
-                                ]
-                            ),
+                        trim(
+                            $validated['purpose']
+                        ),
                     ];
 
                     /*
@@ -748,31 +699,21 @@ class BorrowingController extends Controller
                     */
 
                     if (
-                        !empty(
-                            $validated[
-                                'applicant_signature'
-                            ]
-                        )
+                        !empty($validated['applicant_signature'])
                     ) {
                         $newSignaturePath =
                             $this->storeSignature(
-                                $validated[
-                                    'applicant_signature'
-                                ],
+                                $validated['applicant_signature'],
                                 'applicant_signature'
                             );
 
                         $oldSignaturePath =
                             $lockedBorrowing
-                                ->applicant_signature;
+                            ->applicant_signature;
 
-                        $data[
-                            'applicant_signature'
-                        ] = $newSignaturePath;
+                        $data['applicant_signature'] = $newSignaturePath;
 
-                        $data[
-                            'signed_at'
-                        ] = now();
+                        $data['signed_at'] = now();
                     }
 
                     $lockedBorrowing->update(
@@ -802,10 +743,10 @@ class BorrowingController extends Controller
                 'toast',
                 [
                     'type' =>
-                        'success',
+                    'success',
 
                     'message' =>
-                        'Data peminjaman berhasil diperbarui.',
+                    'Data peminjaman berhasil diperbarui.',
                 ]
             );
     }
@@ -887,7 +828,7 @@ class BorrowingController extends Controller
 
         throw ValidationException::withMessages([
             'status' =>
-                'Status peminjaman tidak valid.',
+            'Status peminjaman tidak valid.',
         ]);
     }
 
@@ -930,16 +871,16 @@ class BorrowingController extends Controller
 
                     $lockedBorrowing =
                         Borrowing::query()
-                            ->whereKey(
-                                $borrowing->id
-                            )
-                            ->lockForUpdate()
-                            ->first();
+                        ->whereKey(
+                            $borrowing->id
+                        )
+                        ->lockForUpdate()
+                        ->first();
 
                     if (!$lockedBorrowing) {
                         throw ValidationException::withMessages([
                             'borrowing' =>
-                                'Data peminjaman tidak ditemukan.',
+                            'Data peminjaman tidak ditemukan.',
                         ]);
                     }
 
@@ -949,7 +890,7 @@ class BorrowingController extends Controller
                     ) {
                         throw ValidationException::withMessages([
                             'status' =>
-                                'Hanya peminjaman dengan status menunggu yang dapat disetujui.',
+                            'Hanya peminjaman dengan status menunggu yang dapat disetujui.',
                         ]);
                     }
 
@@ -972,21 +913,21 @@ class BorrowingController extends Controller
 
                     $roomInventory =
                         RoomInventory::query()
-                            ->with([
-                                'room:id,name,code,faculty_id,is_active',
-                                'item:id,name',
-                            ])
-                            ->whereKey(
-                                $lockedBorrowing
-                                    ->room_inventory_id
-                            )
-                            ->lockForUpdate()
-                            ->first();
+                        ->with([
+                            'room:id,name,code,faculty_id,is_active',
+                            'item:id,name',
+                        ])
+                        ->whereKey(
+                            $lockedBorrowing
+                                ->room_inventory_id
+                        )
+                        ->lockForUpdate()
+                        ->first();
 
                     if (!$roomInventory) {
                         throw ValidationException::withMessages([
                             'room_inventory_id' =>
-                                'Inventaris peminjaman tidak ditemukan.',
+                            'Inventaris peminjaman tidak ditemukan.',
                         ]);
                     }
 
@@ -1024,9 +965,7 @@ class BorrowingController extends Controller
 
                     $approverSignaturePath =
                         $this->storeSignature(
-                            $validated[
-                                'approver_signature'
-                            ] ?? null,
+                            $validated['approver_signature'] ?? null,
                             'approver_signature'
                         );
 
@@ -1038,19 +977,19 @@ class BorrowingController extends Controller
 
                     $lockedBorrowing->update([
                         'status' =>
-                            'approved',
+                        'approved',
 
                         'approved_by' =>
-                            $user->id,
+                        $user->id,
 
                         'approved_at' =>
-                            now(),
+                        now(),
 
                         'approver_signature' =>
-                            $approverSignaturePath,
+                        $approverSignaturePath,
 
                         'rejection_note' =>
-                            null,
+                        null,
                     ]);
 
                     /*
@@ -1083,10 +1022,10 @@ class BorrowingController extends Controller
                 'toast',
                 [
                     'type' =>
-                        'success',
+                    'success',
 
                     'message' =>
-                        'Peminjaman berhasil disetujui. Pengajuan lain yang bentrok otomatis ditolak.',
+                    'Peminjaman berhasil disetujui. Pengajuan lain yang bentrok otomatis ditolak.',
                 ]
             );
     }
@@ -1109,7 +1048,7 @@ class BorrowingController extends Controller
         ) {
             throw ValidationException::withMessages([
                 'status' =>
-                    'Hanya peminjaman dengan status menunggu yang dapat ditolak.',
+                'Hanya peminjaman dengan status menunggu yang dapat ditolak.',
             ]);
         }
 
@@ -1119,38 +1058,34 @@ class BorrowingController extends Controller
         );
 
         if (
-            empty(
-                trim(
-                    $validated['rejection_note']
+            empty(trim(
+                $validated['rejection_note']
                     ?? ''
-                )
-            )
+            ))
         ) {
             throw ValidationException::withMessages([
                 'rejection_note' =>
-                    'Alasan penolakan wajib diisi.',
+                'Alasan penolakan wajib diisi.',
             ]);
         }
 
         $borrowing->update([
             'status' =>
-                'rejected',
+            'rejected',
 
             'rejection_note' =>
-                trim(
-                    $validated[
-                        'rejection_note'
-                    ]
-                ),
+            trim(
+                $validated['rejection_note']
+            ),
 
             'approved_by' =>
-                null,
+            null,
 
             'approved_at' =>
-                null,
+            null,
 
             'approver_signature' =>
-                null,
+            null,
         ]);
 
         return redirect()
@@ -1159,10 +1094,10 @@ class BorrowingController extends Controller
                 'toast',
                 [
                     'type' =>
-                        'success',
+                    'success',
 
                     'message' =>
-                        'Peminjaman berhasil ditolak.',
+                    'Peminjaman berhasil ditolak.',
                 ]
             );
     }
@@ -1192,7 +1127,7 @@ class BorrowingController extends Controller
         ) {
             throw ValidationException::withMessages([
                 'status' =>
-                    'Peminjaman ini belum dapat diproses sebagai pengembalian.',
+                'Peminjaman ini belum dapat diproses sebagai pengembalian.',
             ]);
         }
 
@@ -1202,23 +1137,17 @@ class BorrowingController extends Controller
         );
 
         if (
-            empty(
-                $validated[
-                    'actual_return_date'
-                ]
-            )
+            empty($validated['actual_return_date'])
         ) {
             throw ValidationException::withMessages([
                 'actual_return_date' =>
-                    'Tanggal pengembalian wajib diisi.',
+                'Tanggal pengembalian wajib diisi.',
             ]);
         }
 
         if (
             strtotime(
-                $validated[
-                    'actual_return_date'
-                ]
+                $validated['actual_return_date']
             )
             <
             strtotime(
@@ -1227,7 +1156,7 @@ class BorrowingController extends Controller
         ) {
             throw ValidationException::withMessages([
                 'actual_return_date' =>
-                    'Tanggal pengembalian tidak boleh sebelum tanggal peminjaman.',
+                'Tanggal pengembalian tidak boleh sebelum tanggal peminjaman.',
             ]);
         }
 
@@ -1236,60 +1165,40 @@ class BorrowingController extends Controller
                 $borrowing,
                 $validated
             ) {
-                /*
-                |--------------------------------------------------------------------------
-                | Lock Inventory
-                |--------------------------------------------------------------------------
-                */
 
                 $roomInventory =
                     RoomInventory::query()
-                        ->whereKey(
-                            $borrowing->room_inventory_id
-                        )
-                        ->lockForUpdate()
-                        ->first();
+                    ->whereKey(
+                        $borrowing->room_inventory_id
+                    )
+                    ->lockForUpdate()
+                    ->first();
 
                 if (!$roomInventory) {
                     throw ValidationException::withMessages([
                         'borrowing' =>
-                            'Inventaris peminjaman tidak ditemukan.',
+                        'Inventaris peminjaman tidak ditemukan.',
                     ]);
                 }
 
-                /*
-                |--------------------------------------------------------------------------
-                | Update Condition
-                |--------------------------------------------------------------------------
-                */
+
 
                 if (
-                    !empty(
-                        $validated['condition']
-                    )
+                    !empty($validated['condition'])
                 ) {
                     $roomInventory->update([
                         'condition' =>
-                            $validated[
-                                'condition'
-                            ],
+                        $validated['condition'],
                     ]);
                 }
 
-                /*
-                |--------------------------------------------------------------------------
-                | Returned
-                |--------------------------------------------------------------------------
-                */
 
                 $borrowing->update([
                     'status' =>
-                        'returned',
+                    'returned',
 
                     'actual_return_date' =>
-                        $validated[
-                            'actual_return_date'
-                        ],
+                    $validated['actual_return_date'],
                 ]);
             }
         );
@@ -1300,10 +1209,10 @@ class BorrowingController extends Controller
                 'toast',
                 [
                     'type' =>
-                        'success',
+                    'success',
 
                     'message' =>
-                        'Peminjaman berhasil dikembalikan.',
+                    'Peminjaman berhasil dikembalikan.',
                 ]
             );
     }
@@ -1332,7 +1241,7 @@ class BorrowingController extends Controller
         ) {
             throw ValidationException::withMessages([
                 'status' =>
-                    'Hanya peminjaman dengan status menunggu atau disetujui yang dapat dibatalkan.',
+                'Hanya peminjaman dengan status menunggu atau disetujui yang dapat dibatalkan.',
             ]);
         }
 
@@ -1348,16 +1257,16 @@ class BorrowingController extends Controller
             function () use ($borrowing) {
                 $borrowing->update([
                     'status' =>
-                        'cancelled',
+                    'cancelled',
 
                     'approved_by' =>
-                        null,
+                    null,
 
                     'approved_at' =>
-                        null,
+                    null,
 
                     'approver_signature' =>
-                        null,
+                    null,
                 ]);
             }
         );
@@ -1374,10 +1283,10 @@ class BorrowingController extends Controller
                 'toast',
                 [
                     'type' =>
-                        'success',
+                    'success',
 
                     'message' =>
-                        'Peminjaman berhasil dibatalkan.',
+                    'Peminjaman berhasil dibatalkan.',
                 ]
             );
     }
@@ -1393,6 +1302,7 @@ class BorrowingController extends Controller
 
         abort_unless($user, 401);
 
+
         Gate::authorize(
             'delete',
             $borrowing
@@ -1402,15 +1312,34 @@ class BorrowingController extends Controller
             in_array(
                 $borrowing->status,
                 [
+                    'pending',
+                    'approved',
                     'borrowed',
-                    'returned',
                 ],
                 true
             )
         ) {
             throw ValidationException::withMessages([
                 'borrowing' =>
-                    'Peminjaman yang sedang atau sudah selesai tidak dapat dihapus.',
+                'Peminjaman yang masih aktif tidak dapat dihapus. Selesaikan atau batalkan peminjaman terlebih dahulu.',
+            ]);
+        }
+
+
+        if (
+            !in_array(
+                $borrowing->status,
+                [
+                    'rejected',
+                    'returned',
+                    'cancelled',
+                ],
+                true
+            )
+        ) {
+            throw ValidationException::withMessages([
+                'borrowing' =>
+                'Status peminjaman tidak dapat dihapus.',
             ]);
         }
 
@@ -1420,9 +1349,43 @@ class BorrowingController extends Controller
         $approverSignature =
             $borrowing->approver_signature;
 
+
         DB::transaction(
             function () use ($borrowing) {
-                $borrowing->delete();
+
+                $lockedBorrowing =
+                    Borrowing::query()
+                    ->whereKey(
+                        $borrowing->id
+                    )
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$lockedBorrowing) {
+                    throw ValidationException::withMessages([
+                        'borrowing' =>
+                        'Data peminjaman tidak ditemukan.',
+                    ]);
+                }
+
+                if (
+                    !in_array(
+                        $lockedBorrowing->status,
+                        [
+                            'rejected',
+                            'returned',
+                            'cancelled',
+                        ],
+                        true
+                    )
+                ) {
+                    throw ValidationException::withMessages([
+                        'borrowing' =>
+                        'Data peminjaman tidak dapat dihapus karena statusnya sudah berubah.',
+                    ]);
+                }
+
+                $lockedBorrowing->delete();
             }
         );
 
@@ -1437,17 +1400,16 @@ class BorrowingController extends Controller
                 $approverSignature
             );
         }
-
         return redirect()
             ->back()
             ->with(
                 'toast',
                 [
                     'type' =>
-                        'success',
+                    'success',
 
                     'message' =>
-                        'Data peminjaman berhasil dihapus.',
+                    'Data peminjaman berhasil dihapus secara permanen.',
                 ]
             );
     }
@@ -1462,11 +1424,11 @@ class BorrowingController extends Controller
         if (
             $user->role === 'admin_fakultas'
             && (int) $facultyId
-                !== (int) $user->faculty_id
+            !== (int) $user->faculty_id
         ) {
             throw ValidationException::withMessages([
                 'faculty_id' =>
-                    'Anda tidak memiliki akses ke fakultas tersebut.',
+                'Anda tidak memiliki akses ke fakultas tersebut.',
             ]);
         }
 
@@ -1481,11 +1443,11 @@ class BorrowingController extends Controller
             )
             && $user->faculty_id
             && (int) $facultyId
-                !== (int) $user->faculty_id
+            !== (int) $user->faculty_id
         ) {
             throw ValidationException::withMessages([
                 'faculty_id' =>
-                    'Peminjaman harus menggunakan fakultas Anda.',
+                'Peminjaman harus menggunakan fakultas Anda.',
             ]);
         }
     }
@@ -1500,7 +1462,7 @@ class BorrowingController extends Controller
         if (
             $user->role === 'admin_fakultas'
             && (int) $borrowing->faculty_id
-                !== (int) $user->faculty_id
+            !== (int) $user->faculty_id
         ) {
             abort(
                 403,
@@ -1533,21 +1495,21 @@ class BorrowingController extends Controller
 
         $belongsToFaculty =
             $roomInventory
-                ->room()
-                ->where(
-                    'faculty_id',
-                    $user->faculty_id
-                )
-                ->where(
-                    'is_active',
-                    true
-                )
-                ->exists();
+            ->room()
+            ->where(
+                'faculty_id',
+                $user->faculty_id
+            )
+            ->where(
+                'is_active',
+                true
+            )
+            ->exists();
 
         if (!$belongsToFaculty) {
             throw ValidationException::withMessages([
                 'room_inventory_id' =>
-                    'Inventaris tersebut tidak tersedia untuk fakultas Anda.',
+                'Inventaris tersebut tidak tersedia untuk fakultas Anda.',
             ]);
         }
     }
@@ -1563,7 +1525,7 @@ class BorrowingController extends Controller
         ) {
             throw ValidationException::withMessages([
                 'room_inventory_id' =>
-                    'Inventaris tersebut tidak dapat dipinjam.',
+                'Inventaris tersebut tidak dapat dipinjam.',
             ]);
         }
 
@@ -1573,7 +1535,7 @@ class BorrowingController extends Controller
         ) {
             throw ValidationException::withMessages([
                 'room_inventory_id' =>
-                    'Inventaris tersebut mengalami kerusakan berat dan tidak dapat dipinjam.',
+                'Inventaris tersebut mengalami kerusakan berat dan tidak dapat dipinjam.',
             ]);
         }
 
@@ -1583,7 +1545,7 @@ class BorrowingController extends Controller
         ) {
             throw ValidationException::withMessages([
                 'room_inventory_id' =>
-                    'Ruangan inventaris tersebut tidak aktif.',
+                'Ruangan inventaris tersebut tidak aktif.',
             ]);
         }
     }
@@ -1641,7 +1603,7 @@ class BorrowingController extends Controller
         if ($existingBorrowing) {
             throw ValidationException::withMessages([
                 'room_inventory_id' =>
-                    'Aset tersebut sedang digunakan pada rentang tanggal yang dipilih. Silakan pilih tanggal lain atau aset lain.',
+                'Aset tersebut sedang digunakan pada rentang tanggal yang dipilih. Silakan pilih tanggal lain atau aset lain.',
             ]);
         }
     }
@@ -1694,7 +1656,7 @@ class BorrowingController extends Controller
         if ($existingBorrowing) {
             throw ValidationException::withMessages([
                 'status' =>
-                    'Peminjaman tidak dapat disetujui karena aset sudah digunakan pada rentang tanggal tersebut.',
+                'Peminjaman tidak dapat disetujui karena aset sudah digunakan pada rentang tanggal tersebut.',
             ]);
         }
     }
@@ -1743,19 +1705,19 @@ class BorrowingController extends Controller
             )
             ->update([
                 'status' =>
-                    'rejected',
+                'rejected',
 
                 'rejection_note' =>
-                    'Pengajuan otomatis ditolak karena aset telah disetujui untuk peminjaman lain pada rentang tanggal yang sama.',
+                'Pengajuan otomatis ditolak karena aset telah disetujui untuk peminjaman lain pada rentang tanggal yang sama.',
 
                 'approved_by' =>
-                    null,
+                null,
 
                 'approved_at' =>
-                    null,
+                null,
 
                 'approver_signature' =>
-                    null,
+                null,
             ]);
     }
 
@@ -1773,19 +1735,19 @@ class BorrowingController extends Controller
     ): RoomInventory {
         $inventory =
             RoomInventory::query()
-                ->with([
-                    'room:id,name,code,faculty_id,is_active',
-                    'item:id,name',
-                ])
-                ->whereKey(
-                    $inventoryId
-                )
-                ->first();
+            ->with([
+                'room:id,name,code,faculty_id,is_active',
+                'item:id,name',
+            ])
+            ->whereKey(
+                $inventoryId
+            )
+            ->first();
 
         if (!$inventory) {
             throw ValidationException::withMessages([
                 'room_inventory_id' =>
-                    'Inventaris tidak ditemukan.',
+                'Inventaris tidak ditemukan.',
             ]);
         }
 
@@ -1846,7 +1808,7 @@ class BorrowingController extends Controller
         ) {
             throw ValidationException::withMessages([
                 $validationKey =>
-                    'Format tanda tangan tidak valid.',
+                'Format tanda tangan tidak valid.',
             ]);
         }
 
@@ -1864,7 +1826,7 @@ class BorrowingController extends Controller
         if ($image === false) {
             throw ValidationException::withMessages([
                 $validationKey =>
-                    'Data tanda tangan tidak valid.',
+                'Data tanda tangan tidak valid.',
             ]);
         }
 
@@ -1875,7 +1837,7 @@ class BorrowingController extends Controller
         ) {
             throw ValidationException::withMessages([
                 $validationKey =>
-                    'Ukuran tanda tangan maksimal 2 MB.',
+                'Ukuran tanda tangan maksimal 2 MB.',
             ]);
         }
 
@@ -1887,7 +1849,7 @@ class BorrowingController extends Controller
         if ($imageInfo === false) {
             throw ValidationException::withMessages([
                 $validationKey =>
-                    'File tanda tangan bukan gambar yang valid.',
+                'File tanda tangan bukan gambar yang valid.',
             ]);
         }
 
@@ -1905,7 +1867,7 @@ class BorrowingController extends Controller
         ) {
             throw ValidationException::withMessages([
                 $validationKey =>
-                    'Format gambar tidak diperbolehkan.',
+                'Format gambar tidak diperbolehkan.',
             ]);
         }
 
@@ -1923,14 +1885,14 @@ class BorrowingController extends Controller
         ) {
             throw ValidationException::withMessages([
                 $validationKey =>
-                    'Dimensi gambar tanda tangan tidak valid.',
+                'Dimensi gambar tanda tangan tidak valid.',
             ]);
         }
 
         $extension =
             $imageInfo['mime'] === 'image/png'
-                ? 'png'
-                : 'jpg';
+            ? 'png'
+            : 'jpg';
 
         $filename =
             'signatures/borrowings/'

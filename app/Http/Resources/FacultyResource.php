@@ -19,6 +19,11 @@ class FacultyResource extends JsonResource
             'code' => $this->code,
             'name' => $this->name,
             'dean' => $this->dean,
+            'dean_nip' => $this->dean_nip,
+
+            // File paths
+            'letterhead_path' => $this->letterhead_path,
+            'dean_signature' => $this->dean_signature,
 
             'studyPrograms' => $this->whenLoaded(
                 'studyPrograms',

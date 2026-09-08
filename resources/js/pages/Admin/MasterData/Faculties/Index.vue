@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { computed, ref } from "vue";
 import { Head, router } from "@inertiajs/vue3";
 
 import FacultyFormModal from "./FacultyFormModal.vue";
@@ -43,6 +43,9 @@ interface Faculty {
     code: string;
     name: string;
     dean: string;
+    dean_nip?: string | null;
+    letterhead_path?: string | null;
+    dean_signature?: string | null;
     studyPrograms: StudyProgram[];
 }
 
@@ -53,11 +56,6 @@ interface PaginatedFaculties {
     total: number;
 }
 
-const props = defineProps<{
-    faculties: PaginatedFaculties;
-    roomTypes?: RoomType[];
-}>();
-
 interface RoomType {
     id: number;
     name: string;
@@ -66,26 +64,117 @@ interface RoomType {
     rooms_count?: number;
 }
 
-const isRoomTypeModalOpen = ref(false);
-const editingRoomType = ref<RoomType | null>(null);
-const isRoomTypeProcessing = ref(false);
-const roomTypeCount = computed(() => props.roomTypes?.length ?? 0);
+interface FacultyFormData {
+    code: string;
+    name: string;
+    dean: string;
+    dean_nip: string;
+    letterhead: File | null;
+    dean_signature: File | null;
+    remove_letterhead: boolean;
+    remove_dean_signature: boolean;
+}
+
+interface StudyProgramFormData {
+    faculty_id: number | null;
+    code: string;
+    degree: string;
+    name: string;
+    head_of_program: string;
+}
+
+interface RoomTypeFormData {
+    name: string;
+    slug: string;
+    description?: string | null;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Props
+|--------------------------------------------------------------------------
+*/
+
+const props = defineProps<{
+    faculties: PaginatedFaculties;
+    roomTypes?: RoomType[];
+}>();
+
+/*
+|--------------------------------------------------------------------------
+| Faculty / Program Study / Room Type State
+|--------------------------------------------------------------------------
+*/
+
 const isLoading = ref(false);
+
 const searchQuery = ref("");
+
 const expandedFaculties = ref<number[]>([]);
+
+/*
+|--------------------------------------------------------------------------
+| Room Type Modal
+|--------------------------------------------------------------------------
+*/
+
+const isRoomTypeModalOpen = ref(false);
+
+const isRoomTypeProcessing = ref(false);
+
+const editingRoomType = ref<RoomType | null>(null);
+
+const roomTypeCount = computed(() => props.roomTypes?.length ?? 0);
+
+/*
+|--------------------------------------------------------------------------
+| Faculty Modal
+|--------------------------------------------------------------------------
+*/
+
 const isFacultyModalOpen = ref(false);
+
+const isFacultyProcessing = ref(false);
+
 const editingFaculty = ref<Faculty | null>(null);
+
+/*
+|--------------------------------------------------------------------------
+| Program Study Modal
+|--------------------------------------------------------------------------
+*/
+
 const isProdiModalOpen = ref(false);
+
 const isProdiProcessing = ref(false);
+
 const editingProdi = ref<StudyProgram | null>(null);
+
 const activeFacultyForProdi = ref<Faculty | null>(null);
-const faculties = computed(() => props.faculties?.data ?? []);
+
+/*
+|--------------------------------------------------------------------------
+| Confirmation Modal
+|--------------------------------------------------------------------------
+*/
 
 const isConfirmModalOpen = ref(false);
+
 const confirmTitle = ref("Konfirmasi Penghapusan");
+
 const confirmMessage = ref("");
+
 const confirmAction = ref<(() => void) | null>(null);
+
 const isDeleting = ref(false);
+
+/*
+|--------------------------------------------------------------------------
+| Computed Data
+|--------------------------------------------------------------------------
+*/
+
+const faculties = computed(() => props.faculties?.data ?? []);
 
 const totalFaculties = computed(
     () => props.faculties?.total ?? faculties.value.length,
@@ -98,42 +187,85 @@ const totalStudyPrograms = computed(() =>
     ),
 );
 
+const filteredFaculties = computed(() => {
+    const query = searchQuery.value.trim().toLowerCase();
+
+    if (!query) {
+        return faculties.value;
+    }
+
+    return faculties.value.filter((faculty) => {
+        const facultyMatch =
+            faculty.name.toLowerCase().includes(query) ||
+            faculty.code.toLowerCase().includes(query) ||
+            faculty.dean.toLowerCase().includes(query);
+
+        const prodiMatch = (faculty.studyPrograms ?? []).some((prodi) => {
+            return (
+                prodi.name?.toLowerCase().includes(query) ||
+                prodi.code?.toLowerCase().includes(query) ||
+                prodi.degree?.toLowerCase().includes(query) ||
+                prodi.head_of_program?.toLowerCase().includes(query)
+            );
+        });
+
+        return facultyMatch || prodiMatch;
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Room Type Actions
+|--------------------------------------------------------------------------
+*/
+
 const openCreateRoomTypeModal = () => {
+    if (isRoomTypeProcessing.value) {
+        return;
+    }
+
     editingRoomType.value = null;
     isRoomTypeModalOpen.value = true;
 };
 
 const openEditRoomTypeModal = (roomType: RoomType) => {
+    if (isRoomTypeProcessing.value) {
+        return;
+    }
+
     editingRoomType.value = {
         id: roomType.id,
         name: roomType.name ?? "",
         slug: roomType.slug ?? "",
-        description: roomType.description ?? "",
+        description: roomType.description ?? null,
     };
 
     isRoomTypeModalOpen.value = true;
 };
 
 const closeRoomTypeModal = () => {
+    if (isRoomTypeProcessing.value) {
+        return;
+    }
+
     isRoomTypeModalOpen.value = false;
     editingRoomType.value = null;
-    isRoomTypeProcessing.value = false;
 };
 
-const handleSaveRoomType = (data: {
-    name: string;
-    slug: string;
-    description?: string | null;
-}) => {
+const handleSaveRoomType = (data: RoomTypeFormData) => {
+    if (isRoomTypeProcessing.value) {
+        return;
+    }
+
     isRoomTypeProcessing.value = true;
 
-    // EDIT
     if (editingRoomType.value) {
         router.put(updateRoomType.url(editingRoomType.value.id), data, {
             preserveScroll: true,
 
             onSuccess: () => {
-                closeRoomTypeModal();
+                isRoomTypeModalOpen.value = false;
+                editingRoomType.value = null;
             },
 
             onError: (errors) => {
@@ -148,12 +280,12 @@ const handleSaveRoomType = (data: {
         return;
     }
 
-    // CREATE
     router.post(storeRoomType.url(), data, {
         preserveScroll: true,
 
         onSuccess: () => {
-            closeRoomTypeModal();
+            isRoomTypeModalOpen.value = false;
+            editingRoomType.value = null;
         },
 
         onError: (errors) => {
@@ -166,78 +298,141 @@ const handleSaveRoomType = (data: {
     });
 };
 
-const filteredFaculties = computed(() => {
-    if (!searchQuery.value) {
-        return faculties.value;
-    }
-
-    const query = searchQuery.value.toLowerCase();
-
-    return faculties.value.filter((faculty) => {
-        const facultyMatch =
-            faculty.name.toLowerCase().includes(query) ||
-            faculty.code.toLowerCase().includes(query);
-
-        const prodiMatch = (faculty.studyPrograms ?? []).some(
-            (prodi) =>
-                prodi.name?.toLowerCase().includes(query) ||
-                prodi.code?.toLowerCase().includes(query) ||
-                prodi.degree?.toLowerCase().includes(query) ||
-                prodi.head_of_program?.toLowerCase().includes(query),
-        );
-
-        return facultyMatch || prodiMatch;
-    });
-});
-
-const toggleExpand = (id: number) => {
-    const index = expandedFaculties.value.indexOf(id);
-
-    if (index > -1) {
-        expandedFaculties.value.splice(index, 1);
-    } else {
-        expandedFaculties.value.push(id);
-    }
-};
+/*
+|--------------------------------------------------------------------------
+| Faculty Actions
+|--------------------------------------------------------------------------
+*/
 
 const openCreateFacultyModal = () => {
+    if (isFacultyProcessing.value) {
+        return;
+    }
+
     editingFaculty.value = null;
     isFacultyModalOpen.value = true;
 };
 
 const openEditFacultyModal = (faculty: Faculty) => {
+    if (isFacultyProcessing.value) {
+        return;
+    }
+
     editingFaculty.value = faculty;
     isFacultyModalOpen.value = true;
 };
 
-const handleSaveFaculty = (data: any) => {
-    if (editingFaculty.value) {
-        router.put(updateFaculty.url(editingFaculty.value.id), data, {
-            preserveScroll: true,
+const closeFacultyModal = () => {
+    if (isFacultyProcessing.value) {
+        return;
+    }
 
-            onSuccess: () => {
-                isFacultyModalOpen.value = false;
+    isFacultyModalOpen.value = false;
+    editingFaculty.value = null;
+};
+
+const handleSaveFaculty = (data: FacultyFormData) => {
+    if (isFacultyProcessing.value) {
+        return;
+    }
+
+    isFacultyProcessing.value = true;
+
+    /*
+     * UPDATE
+     *
+     * POST + _method=PUT digunakan karena request
+     * dapat membawa file upload.
+     */
+    if (editingFaculty.value) {
+        router.post(
+            updateFaculty.url(editingFaculty.value.id),
+            {
+                ...data,
+                _method: "PUT",
             },
-        });
+            {
+                preserveScroll: true,
+                forceFormData: true,
+
+                onSuccess: () => {
+                    isFacultyModalOpen.value = false;
+                    editingFaculty.value = null;
+                },
+
+                onError: (errors) => {
+                    console.error("Gagal update Fakultas:", errors);
+                },
+
+                onFinish: () => {
+                    isFacultyProcessing.value = false;
+                },
+            },
+        );
 
         return;
     }
 
+    /*
+     * CREATE
+     */
     router.post(storeFaculty.url(), data, {
         preserveScroll: true,
+        forceFormData: true,
 
         onSuccess: () => {
             isFacultyModalOpen.value = false;
+            editingFaculty.value = null;
+        },
+
+        onError: (errors) => {
+            console.error("Gagal menyimpan Fakultas:", errors);
+        },
+
+        onFinish: () => {
+            isFacultyProcessing.value = false;
         },
     });
 };
 
+/*
+|--------------------------------------------------------------------------
+| Faculty Expand / Collapse
+|--------------------------------------------------------------------------
+*/
+
+const toggleExpand = (facultyId: number) => {
+    const index = expandedFaculties.value.indexOf(facultyId);
+
+    if (index !== -1) {
+        expandedFaculties.value.splice(index, 1);
+        return;
+    }
+
+    expandedFaculties.value.push(facultyId);
+};
+
+/*
+|--------------------------------------------------------------------------
+| Delete Faculty
+|--------------------------------------------------------------------------
+*/
+
 const deleteFaculty = (facultyId: number) => {
+    if (isDeleting.value) {
+        return;
+    }
+
     confirmTitle.value = "Hapus Fakultas?";
+
     confirmMessage.value =
         "Apakah Anda yakin ingin menghapus fakultas ini? Semua program studi di dalamnya juga akan ikut terhapus.";
 
     confirmAction.value = () => {
+        if (isDeleting.value) {
+            return;
+        }
+
         isDeleting.value = true;
 
         router.delete(destroyFaculty.url(facultyId), {
@@ -254,27 +449,17 @@ const deleteFaculty = (facultyId: number) => {
     isConfirmModalOpen.value = true;
 };
 
-const cancelDelete = () => {
-    if (isDeleting.value) {
-        return;
-    }
+/*
+|--------------------------------------------------------------------------
+| Program Study Actions
+|--------------------------------------------------------------------------
+*/
 
-    isConfirmModalOpen.value = false;
-    confirmAction.value = null;
-};
-
-const executeDelete = () => {
-    if (!confirmAction.value || isDeleting.value) {
-        return;
-    }
-
-    confirmAction.value();
-};
-
-/**
- * Tambah Program Studi
- */
 const openProdiModal = (faculty: Faculty) => {
+    if (isProdiProcessing.value) {
+        return;
+    }
+
     editingProdi.value = null;
 
     activeFacultyForProdi.value = faculty;
@@ -282,12 +467,14 @@ const openProdiModal = (faculty: Faculty) => {
     isProdiModalOpen.value = true;
 };
 
-const openEditProdiModal = (faculty: Faculty, prodi: StudyProgram) => {
-    console.log("DATA PRODI YANG AKAN DIEDIT:", prodi);
+const openEditProdiModal = (
+    faculty: Faculty,
+    prodi: StudyProgram,
+) => {
+    if (isProdiProcessing.value) {
+        return;
+    }
 
-    /*
-     * Simpan fakultas aktif.
-     */
     activeFacultyForProdi.value = faculty;
 
     editingProdi.value = {
@@ -303,23 +490,21 @@ const openEditProdiModal = (faculty: Faculty, prodi: StudyProgram) => {
 };
 
 const closeProdiModal = () => {
+    if (isProdiProcessing.value) {
+        return;
+    }
+
     isProdiModalOpen.value = false;
-
     editingProdi.value = null;
-
     activeFacultyForProdi.value = null;
-
-    isProdiProcessing.value = false;
 };
 
-const handleSaveProdi = (data: {
-    faculty_id: number | null;
-    code: string;
-    degree: string;
-    name: string;
-    head_of_program: string;
-}) => {
+const handleSaveProdi = (data: StudyProgramFormData) => {
     if (!activeFacultyForProdi.value) {
+        return;
+    }
+
+    if (isProdiProcessing.value) {
         return;
     }
 
@@ -334,14 +519,16 @@ const handleSaveProdi = (data: {
     };
 
     /*
-     * EDIT
+     * UPDATE
      */
     if (editingProdi.value?.id) {
         router.put(updateProdi.url(editingProdi.value.id), payload, {
             preserveScroll: true,
 
             onSuccess: () => {
-                closeProdiModal();
+                isProdiModalOpen.value = false;
+                editingProdi.value = null;
+                activeFacultyForProdi.value = null;
             },
 
             onError: (errors) => {
@@ -363,7 +550,9 @@ const handleSaveProdi = (data: {
         preserveScroll: true,
 
         onSuccess: () => {
-            closeProdiModal();
+            isProdiModalOpen.value = false;
+            editingProdi.value = null;
+            activeFacultyForProdi.value = null;
         },
 
         onError: (errors) => {
@@ -376,12 +565,27 @@ const handleSaveProdi = (data: {
     });
 };
 
+/*
+|--------------------------------------------------------------------------
+| Delete Program Study
+|--------------------------------------------------------------------------
+*/
+
 const deleteProdi = (prodiId: number) => {
+    if (isDeleting.value) {
+        return;
+    }
+
     confirmTitle.value = "Hapus Program Studi?";
+
     confirmMessage.value =
         "Apakah Anda yakin ingin menghapus program studi ini? Data yang sudah dihapus tidak dapat dikembalikan.";
 
     confirmAction.value = () => {
+        if (isDeleting.value) {
+            return;
+        }
+
         isDeleting.value = true;
 
         router.delete(destroyProdi.url(prodiId), {
@@ -396,6 +600,29 @@ const deleteProdi = (prodiId: number) => {
     };
 
     isConfirmModalOpen.value = true;
+};
+
+/*
+|--------------------------------------------------------------------------
+| Confirmation Modal Actions
+|--------------------------------------------------------------------------
+*/
+
+const cancelDelete = () => {
+    if (isDeleting.value) {
+        return;
+    }
+
+    isConfirmModalOpen.value = false;
+    confirmAction.value = null;
+};
+
+const executeDelete = () => {
+    if (!confirmAction.value || isDeleting.value) {
+        return;
+    }
+
+    confirmAction.value();
 };
 </script>
 
@@ -962,7 +1189,8 @@ const deleteProdi = (prodiId: number) => {
     <FacultyFormModal
         :show="isFacultyModalOpen"
         :faculty="editingFaculty"
-        @close="isFacultyModalOpen = false"
+        :processing="isFacultyProcessing"
+        @close="closeFacultyModal"
         @submit="handleSaveFaculty"
     />
 

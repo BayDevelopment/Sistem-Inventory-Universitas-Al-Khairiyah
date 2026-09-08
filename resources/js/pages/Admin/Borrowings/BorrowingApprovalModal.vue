@@ -43,12 +43,6 @@ interface RoomInventory {
     item?: Item | null;
 }
 
-interface Approver {
-    id: number;
-    name: string;
-    email?: string | null;
-}
-
 interface Borrowing {
     id: number;
     user_id?: number | null;
@@ -83,7 +77,7 @@ interface Borrowing {
     user?: User | null;
     faculty?: Faculty | null;
     room_inventory?: RoomInventory | null;
-    approver?: Approver | null;
+    approver?: User | null;
 }
 
 interface ApprovalSubmitData {
@@ -343,6 +337,30 @@ function getStatusLabel(status?: string | null) {
 
 /*
 |--------------------------------------------------------------------------
+| Signature Helper
+|--------------------------------------------------------------------------
+*/
+
+function getSignatureUrl(
+    path: string | null | undefined,
+): string | null {
+    if (!path) {
+        return null;
+    }
+
+    if (
+        path.startsWith("http://") ||
+        path.startsWith("https://") ||
+        path.startsWith("/")
+    ) {
+        return path;
+    }
+
+    return `/storage/${path}`;
+}
+
+/*
+|--------------------------------------------------------------------------
 | Watch
 |--------------------------------------------------------------------------
 */
@@ -386,7 +404,7 @@ watch(
 
                 <button
                     type="button"
-                    class="rounded-lg p-2 text-[#706f6c] transition hover:bg-black/5 hover:text-[#1b1b18] dark:text-[#A1A09A] dark:hover:bg-white/10 dark:hover:text-white"
+                    class="rounded-lg p-2 text-[#706f6c] transition hover:bg-black/5 hover:text-[#1b1b18] disabled:cursor-not-allowed disabled:opacity-50 dark:text-[#A1A09A] dark:hover:bg-white/10 dark:hover:text-white"
                     :disabled="processing"
                     @click="close"
                 >
@@ -582,37 +600,66 @@ watch(
                             </div>
                         </div>
 
-                        <!-- Signature -->
-                        <div>
-                            <p
-                                class="mb-2 text-xs font-medium text-[#706f6c] dark:text-[#A1A09A]"
+                        <!-- =====================================================
+                             TANDA TANGAN PEMOHON
+                        ====================================================== -->
+                        <section class="mb-6">
+                            <div
+                                class="mb-3 flex items-center gap-2"
                             >
-                                Tanda Tangan Pemohon
-                            </p>
+                                <div
+                                    class="h-5 w-1 rounded-full bg-[#f53003]"
+                                ></div>
+
+                                <h3
+                                    class="text-sm font-semibold text-[#1b1b18] dark:text-[#EDEDEC]"
+                                >
+                                    Tanda Tangan Pemohon
+                                </h3>
+                            </div>
 
                             <div
-                                class="rounded-xl border border-black/10 bg-black/[0.02] p-4 dark:border-white/10 dark:bg-white/[0.03]"
+                                class="rounded-xl border border-black/10 p-4 dark:border-white/10"
                             >
-                                <template
+                                <div
                                     v-if="borrowing.applicant_signature"
+                                    class="rounded-lg border border-black/10 bg-black/[0.02] p-4 dark:border-white/10 dark:bg-white/[0.03]"
                                 >
-                                    <img
-                                        :src="
-                                            borrowing.applicant_signature
-                                        "
-                                        alt="Tanda tangan pemohon"
-                                        class="max-h-28 max-w-full object-contain"
-                                    />
-                                </template>
+                                    <div
+                                        class="flex min-h-[140px] items-center justify-center rounded-lg bg-white p-4 dark:bg-[#0f0f0e]"
+                                    >
+                                        <img
+                                            :src="
+                                                getSignatureUrl(
+                                                    borrowing.applicant_signature,
+                                                ) ?? ''
+                                            "
+                                            alt="Tanda tangan pemohon"
+                                            class="max-h-32 max-w-full object-contain"
+                                        />
+                                    </div>
+
+                                    <p
+                                        v-if="borrowing.signed_at"
+                                        class="mt-3 text-xs text-[#706f6c] dark:text-[#A1A09A]"
+                                    >
+                                        Ditandatangani:
+                                        {{
+                                            formatDate(
+                                                borrowing.signed_at,
+                                            )
+                                        }}
+                                    </p>
+                                </div>
 
                                 <p
                                     v-else
                                     class="text-sm text-[#706f6c] dark:text-[#A1A09A]"
                                 >
-                                    Tidak ada tanda tangan.
+                                    Belum ada tanda tangan pemohon.
                                 </p>
                             </div>
-                        </div>
+                        </section>
                     </div>
 
                     <!-- Reject Form -->
@@ -708,7 +755,7 @@ watch(
                                 <path
                                     class="opacity-75"
                                     fill="currentColor"
-                                    d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                                    d="M4 12a8 8 0 018-8v4a4 4 0 01-4 4H4z"
                                 />
                             </svg>
 

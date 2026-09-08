@@ -163,14 +163,14 @@ class BorrowingPolicy
                 (int) $borrowing->user_id ===
                 (int) $user->id
             )
-            && in_array(
-                $borrowing->status,
-                [
-                    'pending',
-                    'rejected',
-                ],
-                true
-            );
+                && in_array(
+                    $borrowing->status,
+                    [
+                        'pending',
+                        'rejected',
+                    ],
+                    true
+                );
         }
 
         return false;
@@ -183,64 +183,18 @@ class BorrowingPolicy
         User $user,
         Borrowing $borrowing
     ): bool {
-        /*
-        |--------------------------------------------------------------------------
-        | SUPER ADMIN
-        |--------------------------------------------------------------------------
-        */
-
-        if ($user->role === 'super_admin') {
-            return true;
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | Borrowing aktif / selesai
-        |--------------------------------------------------------------------------
-        */
-
-        if (
-            in_array(
-                $borrowing->status,
-                [
-                    'borrowed',
-                    'returned',
-                ],
-                true
-            )
-        ) {
+        if ($user->role !== 'super_admin') {
             return false;
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | ADMIN FAKULTAS
-        |--------------------------------------------------------------------------
-        */
-
-        if ($user->role === 'admin_fakultas') {
-            return (int) $borrowing->faculty_id ===
-                (int) $user->faculty_id;
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | DOSEN / MAHASISWA
-        |--------------------------------------------------------------------------
-        */
-
-        if (
-            in_array(
-                $user->role,
-                ['dosen', 'mahasiswa'],
-                true
-            )
-        ) {
-            return (int) $borrowing->user_id ===
-                (int) $user->id;
-        }
-
-        return false;
+        return in_array(
+            $borrowing->status,
+            [
+                'rejected',
+                'cancelled',
+            ],
+            true
+        );
     }
 
     /**

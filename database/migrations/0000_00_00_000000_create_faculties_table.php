@@ -6,20 +6,26 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
-    public function up(): void {
+    public function up(): void
+    {
         Schema::create('faculties', function (Blueprint $table) {
             $table->id();
-            $table->string('name'); // Contoh: Fakultas Teknik
-            $table->string('code')->unique(); // Contoh: FT
-            $table->string('dean'); 
+
+            $table->string('name'); // Contoh: Fakultas Ilmu Komputer
+            $table->string('code')->unique(); // Contoh: FIK
+
+            $table->string('letterhead_path')->nullable();
+
+            $table->string('dean');
+            $table->string('dean_nip')->nullable();
+            $table->string('dean_signature')->nullable();
+
             $table->timestamps();
         });
     }
 
-    public function down(): void {
+    public function down(): void
+    {
         Schema::dropIfExists('faculties');
     }
 };

@@ -16,18 +16,32 @@ interface Room {
     floor?: string | null;
 }
 
+interface ExistingAttachment {
+    path: string;
+    url: string;
+    name: string;
+}
+
 interface Procurement {
     id?: number;
+
     faculty_id: number | string;
     requested_by?: number | string;
     room_id?: number | string | null;
+
     item_name: string;
     quantity: number | string;
     type: "replacement" | "new_item";
     reason: string;
+
+    subject?: string | null;
+    attachments?: ExistingAttachment[] | null;
     requester_signature?: string | null;
+
     requested_at?: string | null;
+
     status?: "pending" | "approved" | "rejected" | "completed";
+    document_number?: string | null;
     processed_by?: number | string | null;
     approver_signature?: string | null;
     processed_at?: string | null;
@@ -41,7 +55,10 @@ interface ProcurementFormData {
     quantity: number;
     type: "replacement" | "new_item";
     reason: string;
+    subject: string | null;
     requester_signature: string | null;
+    attachments: File[];
+    remove_attachments: string[];
 }
 
 const props = defineProps<{
@@ -57,6 +74,22 @@ const emit = defineEmits<{
     (e: "submit", data: ProcurementFormData): void;
 }>();
 
+const MAX_ATTACHMENTS = 5;
+const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024;
+
+const ALLOWED_ATTACHMENT_TYPES = [
+    "image/jpeg",
+    "image/png",
+    "application/pdf",
+];
+
+const ALLOWED_ATTACHMENT_EXTENSIONS = [
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".pdf",
+];
+
 const emptyForm = (): ProcurementFormData => ({
     faculty_id: 0,
     room_id: null,
@@ -64,12 +97,19 @@ const emptyForm = (): ProcurementFormData => ({
     quantity: 1,
     type: "replacement",
     reason: "",
+    subject: "",
     requester_signature: null,
+    attachments: [],
+    remove_attachments: [],
 });
 
 const form = ref<ProcurementFormData>(emptyForm());
 
 const errorMessage = ref("");
+
+const existingAttachments = ref<ExistingAttachment[]>([]);
+
+const attachmentInput = ref<HTMLInputElement | null>(null);
 
 /*
 |--------------------------------------------------------------------------
@@ -86,12 +126,6 @@ let canvasContext: CanvasRenderingContext2D | null = null;
 
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 250;
-
-/*
-|--------------------------------------------------------------------------
-| INITIALIZE CANVAS
-|--------------------------------------------------------------------------
-*/
 
 const initializeCanvas = () => {
     const canvas = signatureCanvas.value;
@@ -152,12 +186,6 @@ const initializeCanvas = () => {
     image.src = form.value.requester_signature;
 };
 
-/*
-|--------------------------------------------------------------------------
-| GET POINTER POSITION
-|--------------------------------------------------------------------------
-*/
-
 const getPointerPosition = (event: PointerEvent) => {
     const canvas = signatureCanvas.value;
 
@@ -179,12 +207,6 @@ const getPointerPosition = (event: PointerEvent) => {
         y: (event.clientY - rect.top) * scaleY,
     };
 };
-
-/*
-|--------------------------------------------------------------------------
-| START DRAWING
-|--------------------------------------------------------------------------
-*/
 
 const startDrawing = (event: PointerEvent) => {
     if (props.processing) {
@@ -208,18 +230,8 @@ const startDrawing = (event: PointerEvent) => {
     isDrawing.value = true;
 
     canvasContext.beginPath();
-
-    canvasContext.moveTo(
-        position.x,
-        position.y,
-    );
+    canvasContext.moveTo(position.x, position.y);
 };
-
-/*
-|--------------------------------------------------------------------------
-| DRAW SIGNATURE
-|--------------------------------------------------------------------------
-*/
 
 const drawSignature = (event: PointerEvent) => {
     if (
@@ -238,21 +250,11 @@ const drawSignature = (event: PointerEvent) => {
 
     event.preventDefault();
 
-    canvasContext.lineTo(
-        position.x,
-        position.y,
-    );
-
+    canvasContext.lineTo(position.x, position.y);
     canvasContext.stroke();
 
     hasSignature.value = true;
 };
-
-/*
-|--------------------------------------------------------------------------
-| STOP DRAWING
-|--------------------------------------------------------------------------
-*/
 
 const stopDrawing = (event?: PointerEvent) => {
     if (!isDrawing.value) {
@@ -274,12 +276,6 @@ const stopDrawing = (event?: PointerEvent) => {
     saveSignature();
 };
 
-/*
-|--------------------------------------------------------------------------
-| SAVE SIGNATURE
-|--------------------------------------------------------------------------
-*/
-
 const saveSignature = () => {
     const canvas = signatureCanvas.value;
 
@@ -291,12 +287,6 @@ const saveSignature = () => {
     form.value.requester_signature =
         canvas.toDataURL("image/png");
 };
-
-/*
-|--------------------------------------------------------------------------
-| CLEAR SIGNATURE
-|--------------------------------------------------------------------------
-*/
 
 const clearSignature = () => {
     const canvas = signatureCanvas.value;
@@ -315,6 +305,112 @@ const clearSignature = () => {
     hasSignature.value = false;
     isDrawing.value = false;
     form.value.requester_signature = null;
+};
+
+/*
+|--------------------------------------------------------------------------
+| ATTACHMENTS
+|--------------------------------------------------------------------------
+*/
+
+const totalAttachmentCount = () => {
+    return (
+        existingAttachments.value.length +
+        form.value.attachments.length
+    );
+};
+
+const isAllowedAttachment = (file: File) => {
+    const fileName = file.name.toLowerCase();
+
+    const hasAllowedExtension =
+        ALLOWED_ATTACHMENT_EXTENSIONS.some((extension) =>
+            fileName.endsWith(extension),
+        );
+
+    const hasAllowedMimeType =
+        ALLOWED_ATTACHMENT_TYPES.includes(file.type);
+
+    return hasAllowedExtension && hasAllowedMimeType;
+};
+
+const handleAttachmentsChange = (event: Event) => {
+    const target = event.target as HTMLInputElement;
+
+    const files = Array.from(target.files ?? []);
+
+    if (files.length === 0) {
+        return;
+    }
+
+    errorMessage.value = "";
+
+    for (const file of files) {
+        if (totalAttachmentCount() >= MAX_ATTACHMENTS) {
+            errorMessage.value =
+                `Maksimal ${MAX_ATTACHMENTS} lampiran per pengajuan.`;
+
+            break;
+        }
+
+        if (!isAllowedAttachment(file)) {
+            errorMessage.value =
+                `File "${file.name}" harus berformat JPG, PNG, atau PDF.`;
+
+            continue;
+        }
+
+        if (file.size > MAX_ATTACHMENT_SIZE) {
+            errorMessage.value =
+                `File "${file.name}" melebihi batas maksimal 5MB.`;
+
+            continue;
+        }
+
+        const alreadySelected = form.value.attachments.some(
+            (existingFile) =>
+                existingFile.name === file.name &&
+                existingFile.size === file.size &&
+                existingFile.lastModified === file.lastModified,
+        );
+
+        if (alreadySelected) {
+            errorMessage.value =
+                `File "${file.name}" sudah dipilih.`;
+
+            continue;
+        }
+
+        form.value.attachments.push(file);
+    }
+
+    if (attachmentInput.value) {
+        attachmentInput.value.value = "";
+    }
+};
+
+const removeNewAttachment = (index: number) => {
+    form.value.attachments.splice(index, 1);
+};
+
+const removeExistingAttachment = (
+    attachment: ExistingAttachment,
+) => {
+    const alreadyMarked =
+        form.value.remove_attachments.includes(
+            attachment.path,
+        );
+
+    if (!alreadyMarked) {
+        form.value.remove_attachments.push(
+            attachment.path,
+        );
+    }
+
+    existingAttachments.value =
+        existingAttachments.value.filter(
+            (item) => item.path !== attachment.path,
+        );
 };
 
 /*
@@ -354,35 +450,34 @@ const syncForm = (
               reason:
                   procurement.reason ?? "",
 
+              subject:
+                  procurement.subject ?? "",
+
               requester_signature:
                   procurement.requester_signature ?? null,
+
+              attachments: [],
+
+              remove_attachments: [],
           }
         : emptyForm();
-};
 
-/*
-|--------------------------------------------------------------------------
-| WATCH PROCUREMENT
-|--------------------------------------------------------------------------
-*/
+    existingAttachments.value =
+        procurement?.attachments
+            ? [...procurement.attachments]
+            : [];
+};
 
 watch(
     () => props.procurement,
     (newVal) => {
         errorMessage.value = "";
-
         syncForm(newVal);
     },
     {
         immediate: true,
     },
 );
-
-/*
-|--------------------------------------------------------------------------
-| WATCH MODAL
-|--------------------------------------------------------------------------
-*/
 
 watch(
     () => props.show,
@@ -401,12 +496,6 @@ watch(
         initializeCanvas();
     },
 );
-
-/*
-|--------------------------------------------------------------------------
-| WATCH FACULTY
-|--------------------------------------------------------------------------
-*/
 
 watch(
     () => form.value.faculty_id,
@@ -431,12 +520,6 @@ watch(
         }
     },
 );
-
-/*
-|--------------------------------------------------------------------------
-| FILTER ROOMS
-|--------------------------------------------------------------------------
-*/
 
 const availableRooms = () => {
     const facultyId = Number(form.value.faculty_id);
@@ -463,12 +546,6 @@ const handleSubmit = () => {
     }
 
     errorMessage.value = "";
-
-    /*
-    |--------------------------------------------------------------------------
-    | SAVE CANVAS FIRST
-    |--------------------------------------------------------------------------
-    */
 
     if (hasSignature.value) {
         saveSignature();
@@ -498,6 +575,10 @@ const handleSubmit = () => {
         form.value.reason ?? "",
     ).trim();
 
+    const subject =
+        String(form.value.subject ?? "").trim() ||
+        null;
+
     const requesterSignature =
         String(
             form.value.requester_signature ?? "",
@@ -505,7 +586,7 @@ const handleSubmit = () => {
 
     /*
     |--------------------------------------------------------------------------
-    | VALIDATE FACULTY
+    | VALIDATION
     |--------------------------------------------------------------------------
     */
 
@@ -516,16 +597,11 @@ const handleSubmit = () => {
         return;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | VALIDATE ROOM
-    |--------------------------------------------------------------------------
-    |
-    | room_id WAJIB berdasarkan migration.
-    |
-    */
-
-    if (!roomId || !Number.isInteger(roomId)) {
+    if (
+        roomId === null ||
+        !Number.isInteger(roomId) ||
+        roomId < 1
+    ) {
         errorMessage.value =
             "Silakan pilih Ruangan terlebih dahulu.";
 
@@ -534,8 +610,7 @@ const handleSubmit = () => {
 
     const selectedRoom = props.rooms.find(
         (room) =>
-            Number(room.id) ===
-            Number(roomId),
+            Number(room.id) === Number(roomId),
     );
 
     if (!selectedRoom) {
@@ -555,12 +630,6 @@ const handleSubmit = () => {
         return;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | VALIDATE ITEM NAME
-    |--------------------------------------------------------------------------
-    */
-
     if (!itemName) {
         errorMessage.value =
             "Nama Barang wajib diisi.";
@@ -568,31 +637,22 @@ const handleSubmit = () => {
         return;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | VALIDATE QUANTITY
-    |--------------------------------------------------------------------------
-    */
-
-    if (!quantity || quantity < 1) {
+    if (itemName.length > 255) {
         errorMessage.value =
-            "Jumlah pengadaan minimal 1 barang.";
+            "Nama Barang maksimal 255 karakter.";
 
         return;
     }
 
-    if (!Number.isInteger(quantity)) {
+    if (
+        !Number.isInteger(quantity) ||
+        quantity < 1
+    ) {
         errorMessage.value =
-            "Jumlah pengadaan harus berupa angka bulat.";
+            "Jumlah pengadaan harus berupa angka bulat minimal 1.";
 
         return;
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | VALIDATE TYPE
-    |--------------------------------------------------------------------------
-    */
 
     if (
         type !== "replacement" &&
@@ -604,17 +664,34 @@ const handleSubmit = () => {
         return;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | VALIDATE REASON
-    |--------------------------------------------------------------------------
-    */
-
     if (!reason) {
         errorMessage.value =
             "Alasan Pengadaan wajib diisi.";
 
         return;
+    }
+
+    if (totalAttachmentCount() > MAX_ATTACHMENTS) {
+        errorMessage.value =
+            `Maksimal ${MAX_ATTACHMENTS} lampiran per pengajuan.`;
+
+        return;
+    }
+
+    for (const file of form.value.attachments) {
+        if (!isAllowedAttachment(file)) {
+            errorMessage.value =
+                `File "${file.name}" harus berformat JPG, PNG, atau PDF.`;
+
+            return;
+        }
+
+        if (file.size > MAX_ATTACHMENT_SIZE) {
+            errorMessage.value =
+                `File "${file.name}" melebihi batas maksimal 5MB.`;
+
+            return;
+        }
     }
 
     /*
@@ -630,47 +707,15 @@ const handleSubmit = () => {
         quantity,
         type,
         reason,
-        requester_signature:
-            requesterSignature,
+        subject,
+        requester_signature: requesterSignature,
+        attachments: form.value.attachments,
+        remove_attachments:
+            form.value.remove_attachments,
     };
-
-    console.log(
-        "=================================",
-    );
-
-    console.log(
-        "PROCUREMENT FORM SUBMIT",
-    );
-
-    console.log(
-        "PROCUREMENT ID:",
-        props.procurement?.id ?? "NEW",
-    );
-
-    console.log(
-        "PROCUREMENT PAYLOAD:",
-        payload,
-    );
-
-    console.log(
-        "SIGNATURE:",
-        requesterSignature
-            ? "ADA"
-            : "TIDAK ADA",
-    );
-
-    console.log(
-        "=================================",
-    );
 
     emit("submit", payload);
 };
-
-/*
-|--------------------------------------------------------------------------
-| HANDLE CLOSE
-|--------------------------------------------------------------------------
-*/
 
 const handleClose = () => {
     if (props.processing) {
@@ -683,12 +728,6 @@ const handleClose = () => {
 
     emit("close");
 };
-
-/*
-|--------------------------------------------------------------------------
-| CLEANUP
-|--------------------------------------------------------------------------
-*/
 
 onBeforeUnmount(() => {
     canvasContext = null;
@@ -764,6 +803,7 @@ onBeforeUnmount(() => {
 
                     <select
                         v-model="form.faculty_id"
+                        required
                         :disabled="
                             faculties.length === 0 ||
                             processing
@@ -783,8 +823,7 @@ onBeforeUnmount(() => {
                             :key="faculty.id"
                             :value="faculty.id"
                         >
-                            {{ faculty.code }}
-                            -
+                            {{ faculty.code }} -
                             {{ faculty.name }}
                         </option>
                     </select>
@@ -793,8 +832,8 @@ onBeforeUnmount(() => {
                         v-if="faculties.length === 0"
                         class="mt-1 text-[11px] font-medium text-amber-600 dark:text-amber-500"
                     >
-                        Silakan input data Fakultas terlebih
-                        dahulu.
+                        Silakan input data Fakultas
+                        terlebih dahulu.
                     </p>
                 </div>
 
@@ -809,6 +848,7 @@ onBeforeUnmount(() => {
 
                     <select
                         v-model="form.room_id"
+                        required
                         :disabled="
                             !form.faculty_id ||
                             availableRooms().length === 0 ||
@@ -831,8 +871,7 @@ onBeforeUnmount(() => {
                             :key="room.id"
                             :value="room.id"
                         >
-                            {{ room.code }}
-                            -
+                            {{ room.code }} -
                             {{ room.name }}
                         </option>
                     </select>
@@ -844,8 +883,8 @@ onBeforeUnmount(() => {
                         "
                         class="mt-1 text-[11px] font-medium text-amber-600 dark:text-amber-500"
                     >
-                        Belum ada ruangan untuk fakultas
-                        yang dipilih.
+                        Belum ada ruangan untuk
+                        fakultas yang dipilih.
                     </p>
                 </div>
 
@@ -859,12 +898,16 @@ onBeforeUnmount(() => {
                             class="mb-1 block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
                         >
                             Nama Barang
-                            <span class="text-red-500">*</span>
+                            <span
+                                class="text-red-500"
+                            >*</span>
                         </label>
 
                         <input
                             v-model="form.item_name"
                             type="text"
+                            required
+                            maxlength="255"
                             placeholder="Contoh: Laptop"
                             :disabled="processing"
                             class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2 text-xs text-[#1b1b18] placeholder-[#a1a09a] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433]"
@@ -877,12 +920,15 @@ onBeforeUnmount(() => {
                             class="mb-1 block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
                         >
                             Jumlah
-                            <span class="text-red-500">*</span>
+                            <span
+                                class="text-red-500"
+                            >*</span>
                         </label>
 
                         <input
                             v-model.number="form.quantity"
                             type="number"
+                            required
                             min="1"
                             step="1"
                             placeholder="Contoh: 5"
@@ -903,12 +949,13 @@ onBeforeUnmount(() => {
 
                     <select
                         v-model="form.type"
+                        required
                         :disabled="processing"
                         class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2 text-xs text-[#1b1b18] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433] dark:disabled:bg-white/5 dark:disabled:text-[#5c5c58]"
                     >
                         <option value="replacement">
-                            Penggantian Barang Rusak / Tidak
-                            Layak
+                            Penggantian Barang Rusak /
+                            Tidak Layak
                         </option>
 
                         <option value="new_item">
@@ -919,18 +966,16 @@ onBeforeUnmount(() => {
 
                 <!-- INFO JENIS -->
                 <div
-                    v-if="
-                        form.type === 'replacement'
-                    "
+                    v-if="form.type === 'replacement'"
                     class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/50 dark:bg-amber-950/20"
                 >
                     <p
                         class="text-[11px] leading-relaxed text-amber-700 dark:text-amber-400"
                     >
-                        Pengadaan ini digunakan untuk
-                        mengganti barang yang rusak,
-                        hilang, atau sudah tidak layak
-                        digunakan.
+                        Pengadaan ini digunakan
+                        untuk mengganti barang yang
+                        rusak, hilang, atau sudah tidak
+                        layak digunakan.
                     </p>
                 </div>
 
@@ -941,9 +986,41 @@ onBeforeUnmount(() => {
                     <p
                         class="text-[11px] leading-relaxed text-blue-700 dark:text-blue-400"
                     >
-                        Pengadaan ini digunakan untuk
-                        menambahkan barang baru ke
-                        kebutuhan Fakultas.
+                        Pengadaan ini digunakan
+                        untuk menambahkan barang baru
+                        ke kebutuhan Fakultas.
+                    </p>
+                </div>
+
+                <!-- PERIHAL -->
+                <div>
+                    <label
+                        class="mb-1 block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
+                    >
+                        Perihal
+                        <span
+                            class="text-[10px] font-normal text-[#a1a09a]"
+                        >
+                            (opsional)
+                        </span>
+                    </label>
+
+                    <input
+                        v-model="form.subject"
+                        type="text"
+                        maxlength="255"
+                        placeholder="Kosongkan untuk memakai perihal otomatis"
+                        :disabled="processing"
+                        class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2 text-xs text-[#1b1b18] placeholder-[#a1a09a] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433]"
+                    />
+
+                    <p
+                        class="mt-1 text-[10px] text-[#706f6c] dark:text-[#A1A09A]"
+                    >
+                        Jika dikosongkan, perihal pada
+                        surat akan dibuat otomatis
+                        berdasarkan nama barang dan
+                        jenis pengadaan.
                     </p>
                 </div>
 
@@ -958,6 +1035,7 @@ onBeforeUnmount(() => {
 
                     <textarea
                         v-model="form.reason"
+                        required
                         rows="4"
                         placeholder="Jelaskan alasan pengadaan barang..."
                         :disabled="processing"
@@ -973,6 +1051,122 @@ onBeforeUnmount(() => {
                     </p>
                 </div>
 
+                <!-- LAMPIRAN -->
+                <div>
+                    <div
+                        class="mb-1 flex items-center justify-between"
+                    >
+                        <label
+                            class="block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
+                        >
+                            Lampiran
+                            <span
+                                class="text-[10px] font-normal text-[#a1a09a]"
+                            >
+                                (opsional)
+                            </span>
+                        </label>
+
+                        <span
+                            class="text-[10px] text-[#a1a09a]"
+                        >
+                            {{ totalAttachmentCount() }}/{{
+                                MAX_ATTACHMENTS
+                            }}
+                            berkas
+                        </span>
+                    </div>
+
+                    <!-- LAMPIRAN LAMA -->
+                    <ul
+                        v-if="
+                            existingAttachments.length > 0
+                        "
+                        class="mb-2 space-y-1"
+                    >
+                        <li
+                            v-for="attachment in existingAttachments"
+                            :key="attachment.path"
+                            class="flex items-center justify-between rounded-lg border border-[#e3e3e0] px-3 py-1.5 text-xs dark:border-[#3E3E3A]"
+                        >
+                            <a
+                                :href="attachment.url"
+                                target="_blank"
+                                rel="noopener"
+                                class="truncate text-[#1b1b18] hover:underline dark:text-[#EDEDEC]"
+                            >
+                                {{ attachment.name }}
+                            </a>
+
+                            <button
+                                type="button"
+                                :disabled="processing"
+                                @click="
+                                    removeExistingAttachment(
+                                        attachment,
+                                    )
+                                "
+                                class="shrink-0 pl-2 text-red-600 hover:underline disabled:opacity-40"
+                            >
+                                Hapus
+                            </button>
+                        </li>
+                    </ul>
+
+                    <!-- FILE BARU -->
+                    <ul
+                        v-if="form.attachments.length > 0"
+                        class="mb-2 space-y-1"
+                    >
+                        <li
+                            v-for="(file, index) in form.attachments"
+                            :key="`${file.name}-${index}`"
+                            class="flex items-center justify-between rounded-lg border border-dashed border-[#e3e3e0] px-3 py-1.5 text-xs dark:border-[#3E3E3A]"
+                        >
+                            <span
+                                class="truncate text-[#1b1b18] dark:text-[#EDEDEC]"
+                            >
+                                {{ file.name }}
+                            </span>
+
+                            <button
+                                type="button"
+                                :disabled="processing"
+                                @click="
+                                    removeNewAttachment(
+                                        index,
+                                    )
+                                "
+                                class="shrink-0 pl-2 text-red-600 hover:underline disabled:opacity-40"
+                            >
+                                Batal
+                            </button>
+                        </li>
+                    </ul>
+
+                    <input
+                        ref="attachmentInput"
+                        type="file"
+                        multiple
+                        accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+                        :disabled="
+                            processing ||
+                            totalAttachmentCount() >=
+                                MAX_ATTACHMENTS
+                        "
+                        @change="handleAttachmentsChange"
+                        class="block w-full text-xs text-[#706f6c] file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[#1b1b18] hover:file:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50 dark:text-[#A1A09A] dark:file:bg-[#20201e] dark:file:text-[#EDEDEC]"
+                    />
+
+                    <p
+                        class="mt-1 text-[10px] text-[#706f6c] dark:text-[#A1A09A]"
+                    >
+                        Format JPG, PNG, atau PDF.
+                        Maksimal {{ MAX_ATTACHMENTS }}
+                        berkas, masing-masing 5MB.
+                    </p>
+                </div>
+
                 <!-- TANDA TANGAN -->
                 <div>
                     <div
@@ -982,6 +1176,11 @@ onBeforeUnmount(() => {
                             class="block text-sm font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
                         >
                             Tanda Tangan Pengaju
+                            <span
+                                class="text-[10px] font-normal text-[#a1a09a]"
+                            >
+                                (opsional)
+                            </span>
                         </label>
 
                         <span
@@ -1004,11 +1203,21 @@ onBeforeUnmount(() => {
                             <canvas
                                 ref="signatureCanvas"
                                 class="block h-[180px] w-full touch-none bg-white dark:bg-[#0f0f0e]"
-                                @pointerdown="startDrawing"
-                                @pointermove="drawSignature"
-                                @pointerup="stopDrawing"
-                                @pointercancel="stopDrawing"
-                                @pointerleave="stopDrawing"
+                                @pointerdown="
+                                    startDrawing
+                                "
+                                @pointermove="
+                                    drawSignature
+                                "
+                                @pointerup="
+                                    stopDrawing
+                                "
+                                @pointercancel="
+                                    stopDrawing
+                                "
+                                @pointerleave="
+                                    stopDrawing
+                                "
                             />
 
                             <div
@@ -1034,7 +1243,8 @@ onBeforeUnmount(() => {
                                 class="text-xs text-[#706f6c] dark:text-[#A1A09A]"
                             >
                                 Gunakan mouse atau layar
-                                sentuh untuk tanda tangan.
+                                sentuh untuk tanda
+                                tangan.
                             </p>
 
                             <button

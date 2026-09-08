@@ -111,6 +111,7 @@ interface Props {
     borrowings: Borrowing[];
     faculties: Faculty[];
     roomInventories: RoomInventory[];
+    canDelete: boolean;
 }
 
 const props = defineProps<Props>();
@@ -132,7 +133,57 @@ const showDetailModal = ref(false);
 const selectedBorrowing = ref<Borrowing | null>(null);
 
 const processing = ref(false);
+const isDeleting = ref(false);
 const errorMessage = ref<string | null>(null);
+
+/*
+|--------------------------------------------------------------------------
+| Custom Alert
+|--------------------------------------------------------------------------
+*/
+
+type AlertType = "error" | "warning" | "success";
+
+const showAlert = ref(false);
+const alertType = ref<AlertType>("error");
+const alertTitle = ref("Terjadi Kesalahan");
+const alertMessage = ref("");
+
+function openAlert(
+    message: string,
+    title = "Terjadi Kesalahan",
+    type: AlertType = "error",
+) {
+    alertMessage.value = message;
+    alertTitle.value = title;
+    alertType.value = type;
+    showAlert.value = true;
+}
+
+function closeAlert() {
+    showAlert.value = false;
+    alertMessage.value = "";
+}
+
+function handleFormValidationError(
+    message: string,
+    title = "Terjadi Kesalahan",
+) {
+    openAlert(message, title, "warning");
+}
+
+const alertIconClass = computed(() => {
+    switch (alertType.value) {
+        case "warning":
+            return "bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400";
+
+        case "success":
+            return "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400";
+
+        default:
+            return "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400";
+    }
+});
 
 /*
 |--------------------------------------------------------------------------
@@ -141,9 +192,17 @@ const errorMessage = ref<string | null>(null);
 */
 
 const isConfirmModalOpen = ref(false);
+
 const confirmTitle = ref("Konfirmasi");
 const confirmMessage = ref("");
+
 const confirmAction = ref<(() => void) | null>(null);
+
+const confirmButtonLabel = ref("Ya, Lanjutkan");
+const confirmLoadingLabel = ref("Memproses...");
+
+const confirmVariant = ref<"cancel" | "delete">("cancel");
+
 const isCancelling = ref(false);
 
 /*
@@ -226,8 +285,7 @@ const totalBorrowed = computed(() => {
 
 const totalReturned = computed(() => {
     return props.borrowings.filter(
-        (borrowing) =>
-            borrowing.status === "returned" || !!borrowing.actual_return_date,
+        (borrowing) => borrowing.status === "returned",
     ).length;
 });
 
@@ -387,6 +445,7 @@ function submitReturn(borrowing: Borrowing, data: BorrowingReturnData) {
     const payload: Record<string, unknown> = {
         status: "returned",
         actual_return_date: data.actual_return_date,
+        condition: data.condition ?? null,
     };
 
     router.put(`/admin/borrowings/${borrowing.id}`, payload, {
@@ -410,7 +469,7 @@ function submitReturn(borrowing: Borrowing, data: BorrowingReturnData) {
 
 /*
 |--------------------------------------------------------------------------
-| Cancel Confirmation
+| Confirmation Modal - Cancel
 |--------------------------------------------------------------------------
 */
 
@@ -420,9 +479,15 @@ function cancelBorrowing(borrowing: Borrowing) {
     }
 
     confirmTitle.value = "Batalkan Peminjaman?";
+
     confirmMessage.value =
         `Peminjaman #${borrowing.id} akan dibatalkan. ` +
-        `Data peminjaman tetap disimpan sebagai riwayat dan tidak akan dihapus dari sistem.`;
+        `Data peminjaman tetap disimpan sebagai riwayat dan ` +
+        `tidak akan dihapus dari sistem.`;
+
+    confirmButtonLabel.value = "Ya, Batalkan";
+    confirmLoadingLabel.value = "Membatalkan...";
+    confirmVariant.value = "cancel";
 
     confirmAction.value = () => {
         isCancelling.value = true;
@@ -458,8 +523,78 @@ function cancelBorrowing(borrowing: Borrowing) {
     isConfirmModalOpen.value = true;
 }
 
+/*
+|--------------------------------------------------------------------------
+| Delete Borrowing
+|--------------------------------------------------------------------------
+*/
+
+function deleteBorrowing(borrowing: Borrowing) {
+    /*
+     * Frontend guard hanya untuk UX.
+     *
+     * Security utama tetap berada di BorrowingPolicy
+     * dan BorrowingController.
+     */
+    if (!props.canDelete) {
+        return;
+    }
+
+    /*
+     * Hanya data historis dengan status rejected/cancelled
+     * yang boleh ditawarkan untuk permanent delete.
+     */
+    if (borrowing.status !== "rejected" && borrowing.status !== "cancelled") {
+        return;
+    }
+
+    confirmTitle.value = "Hapus Peminjaman Permanen?";
+
+    confirmMessage.value =
+        `Data peminjaman #${borrowing.id} dengan status ` +
+        `"${statusLabel(borrowing.status)}" akan dihapus secara permanen. ` +
+        `Tindakan ini tidak dapat dibatalkan.`;
+
+    confirmButtonLabel.value = "Ya, Hapus";
+    confirmLoadingLabel.value = "Menghapus...";
+    confirmVariant.value = "delete";
+
+    confirmAction.value = () => {
+        isDeleting.value = true;
+        errorMessage.value = null;
+
+        router.delete(`/admin/borrowings/${borrowing.id}`, {
+            preserveScroll: true,
+
+            onSuccess: () => {
+                closeConfirmModal();
+            },
+
+            onError: (errors) => {
+                errorMessage.value =
+                    Object.values(errors)[0] ??
+                    "Terjadi kesalahan saat menghapus data peminjaman.";
+
+                closeConfirmModal();
+            },
+
+            onFinish: () => {
+                isDeleting.value = false;
+            },
+        });
+    };
+
+    isConfirmModalOpen.value = true;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Confirmation Actions
+|--------------------------------------------------------------------------
+*/
+
 function cancelConfirmModal() {
-    if (isCancelling.value) {
+    if (isCancelling.value || isDeleting.value) {
         return;
     }
 
@@ -468,7 +603,7 @@ function cancelConfirmModal() {
 }
 
 function executeConfirmAction() {
-    if (!confirmAction.value || isCancelling.value) {
+    if (!confirmAction.value || isCancelling.value || isDeleting.value) {
         return;
     }
 
@@ -854,7 +989,6 @@ function statusClass(status?: string | null) {
                 <div
                     class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
                 >
-                    <!-- Search -->
                     <div class="relative w-full sm:w-96">
                         <input
                             v-model="search"
@@ -879,7 +1013,6 @@ function statusClass(status?: string | null) {
                         </svg>
                     </div>
 
-                    <!-- Status -->
                     <div class="w-full sm:w-56">
                         <select
                             v-model="statusFilter"
@@ -1257,7 +1390,9 @@ function statusClass(status?: string | null) {
                                                     cancelBorrowing(borrowing)
                                                 "
                                                 :disabled="
-                                                    processing || isCancelling
+                                                    processing ||
+                                                    isCancelling ||
+                                                    isDeleting
                                                 "
                                                 class="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-600 transition hover:bg-red-100 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/50"
                                                 title="Batalkan Peminjaman"
@@ -1274,6 +1409,41 @@ function statusClass(status?: string | null) {
                                                         stroke-linecap="round"
                                                         stroke-linejoin="round"
                                                         d="M6 18 18 6M6 6l12 12"
+                                                    />
+                                                </svg>
+                                            </button>
+
+                                            <!-- Delete -->
+                                            <button
+                                                v-if="
+                                                    props.canDelete &&
+                                                    (borrowing.status ===
+                                                        'rejected' ||
+                                                        borrowing.status ===
+                                                            'cancelled')
+                                                "
+                                                type="button"
+                                                @click="
+                                                    deleteBorrowing(borrowing)
+                                                "
+                                                :disabled="
+                                                    isDeleting || isCancelling
+                                                "
+                                                class="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-600 transition hover:bg-red-100 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/50"
+                                                title="Hapus Permanen"
+                                            >
+                                                <svg
+                                                    xmlns="http://www.w3.org/2000/svg"
+                                                    fill="none"
+                                                    viewBox="0 0 24 24"
+                                                    stroke-width="1.5"
+                                                    stroke="currentColor"
+                                                    class="h-3.5 w-3.5"
+                                                >
+                                                    <path
+                                                        stroke-linecap="round"
+                                                        stroke-linejoin="round"
+                                                        d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12.73 0c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
                                                     />
                                                 </svg>
                                             </button>
@@ -1373,9 +1543,11 @@ function statusClass(status?: string | null) {
             :show="showFormModal"
             :faculties="props.faculties"
             :room-inventories="props.roomInventories"
+            :borrowings="props.borrowings"
             :processing="processing"
             @close="closeFormModal"
             @submit="submitCreate"
+            @validation-error="handleFormValidationError"
         />
 
         <!-- DETAIL MODAL -->
@@ -1406,91 +1578,243 @@ function statusClass(status?: string | null) {
         />
 
         <!-- CUSTOM CONFIRMATION MODAL -->
-        <div
-            v-if="isConfirmModalOpen"
-            class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-        >
+        <Teleport to="body">
             <div
-                class="w-full max-w-sm overflow-hidden rounded-2xl border border-black/5 bg-white shadow-2xl dark:border-white/10 dark:bg-[#161615]"
+                v-if="isConfirmModalOpen"
+                class="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
             >
-                <!-- HEADER -->
-                <div
-                    class="flex items-start gap-3 border-b border-[#e3e3e0] px-6 py-5 dark:border-[#3E3E3A]"
+                <Transition
+                    appear
+                    enter-active-class="transition duration-200 ease-out"
+                    enter-from-class="opacity-0 scale-95"
+                    enter-to-class="opacity-100 scale-100"
+                    leave-active-class="transition duration-150 ease-in"
+                    leave-from-class="opacity-100 scale-100"
+                    leave-to-class="opacity-0 scale-95"
                 >
                     <div
-                        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600 dark:bg-red-950/30 dark:text-red-400"
+                        class="w-full max-w-sm overflow-hidden rounded-2xl border border-black/5 bg-white shadow-2xl dark:border-white/10 dark:bg-[#161615]"
                     >
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke-width="1.5"
-                            stroke="currentColor"
-                            class="h-5 w-5"
+                        <!-- HEADER -->
+                        <div
+                            class="flex items-start gap-3 border-b border-[#e3e3e0] px-6 py-5 dark:border-[#3E3E3A]"
                         >
-                            <path
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                d="M12 9v3.75m0 3.75h.007v.008H12v-.008ZM10.29 3.86 1.82 18a1.5 1.5 0 0 0 1.29 2.25h17.78A1.5 1.5 0 0 0 22.18 18L13.71 3.86a1.5 1.5 0 0 0-2.42 0Z"
-                            />
-                        </svg>
+                            <div
+                                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+                                :class="
+                                    confirmVariant === 'delete'
+                                        ? 'bg-red-50 text-red-600 dark:bg-red-950/30 dark:text-red-400'
+                                        : 'bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400'
+                                "
+                            >
+                                <!-- DELETE ICON -->
+                                <svg
+                                    v-if="confirmVariant === 'delete'"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke-width="1.5"
+                                    stroke="currentColor"
+                                    class="h-5 w-5"
+                                >
+                                    <path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12.73 0c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
+                                    />
+                                </svg>
+
+                                <!-- WARNING ICON -->
+                                <svg
+                                    v-else
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke-width="1.5"
+                                    stroke="currentColor"
+                                    class="h-5 w-5"
+                                >
+                                    <path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        d="M12 9v3.75m0 3.75h.007v.008H12v-.008ZM10.29 3.86 1.82 18a1.5 1.5 0 0 0 1.29 2.25h17.78A1.5 1.5 0 0 0 22.18 18L13.71 3.86a1.5 1.5 0 0 0-2.42 0Z"
+                                    />
+                                </svg>
+                            </div>
+
+                            <div class="min-w-0 flex-1">
+                                <h3
+                                    class="text-base font-semibold tracking-tight text-[#1b1b18] dark:text-[#EDEDEC]"
+                                >
+                                    {{ confirmTitle }}
+                                </h3>
+
+                                <p
+                                    class="mt-1.5 text-xs leading-relaxed text-[#706f6c] dark:text-[#A1A09A]"
+                                >
+                                    {{ confirmMessage }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- FOOTER -->
+                        <div
+                            class="flex items-center justify-end gap-2 bg-[#FDFDFC] px-6 py-4 dark:bg-[#0a0a0a]"
+                        >
+                            <button
+                                type="button"
+                                @click="cancelConfirmModal"
+                                :disabled="isCancelling || isDeleting"
+                                class="rounded-lg border border-[#e3e3e0] bg-white px-3.5 py-2 text-xs font-medium text-[#1b1b18] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#EDEDEC] dark:hover:bg-[#20201e]"
+                            >
+                                Batal
+                            </button>
+
+                            <button
+                                type="button"
+                                @click="executeConfirmAction"
+                                :disabled="isCancelling || isDeleting"
+                                :class="
+                                    confirmVariant === 'delete'
+                                        ? 'bg-red-600 hover:bg-red-700'
+                                        : 'bg-amber-600 hover:bg-amber-700'
+                                "
+                                class="inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-xs font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                <svg
+                                    v-if="isCancelling || isDeleting"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke-width="1.5"
+                                    stroke="currentColor"
+                                    class="h-3.5 w-3.5 animate-spin"
+                                >
+                                    <path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        d="M12 3v3m6.364-.364-2.121 2.121M21 12h-3m.364 6.364-2.121-2.121M12 21v-3m-6.364.364 2.121-2.121M3 12H6m-.364-6.364 2.121 2.121"
+                                    />
+                                </svg>
+
+                                {{
+                                    isCancelling || isDeleting
+                                        ? confirmLoadingLabel
+                                        : confirmButtonLabel
+                                }}
+                            </button>
+                        </div>
                     </div>
-
-                    <div class="min-w-0 flex-1">
-                        <h3
-                            class="text-base font-semibold tracking-tight text-[#1b1b18] dark:text-[#EDEDEC]"
-                        >
-                            {{ confirmTitle }}
-                        </h3>
-
-                        <p
-                            class="mt-1.5 text-xs leading-relaxed text-[#706f6c] dark:text-[#A1A09A]"
-                        >
-                            {{ confirmMessage }}
-                        </p>
-                    </div>
-                </div>
-
-                <!-- FOOTER -->
-                <div
-                    class="flex items-center justify-end gap-2 bg-[#FDFDFC] px-6 py-4 dark:bg-[#0a0a0a]"
-                >
-                    <button
-                        type="button"
-                        @click="cancelConfirmModal"
-                        :disabled="isCancelling"
-                        class="rounded-lg border border-[#e3e3e0] bg-white px-3.5 py-2 text-xs font-medium text-[#1b1b18] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#EDEDEC] dark:hover:bg-[#20201e]"
-                    >
-                        Batal
-                    </button>
-
-                    <button
-                        type="button"
-                        @click="executeConfirmAction"
-                        :disabled="isCancelling"
-                        class="inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-3.5 py-2 text-xs font-medium text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                        <svg
-                            v-if="isCancelling"
-                            xmlns="http://www.w3.org/2000/svg"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke-width="1.5"
-                            stroke="currentColor"
-                            class="h-3.5 w-3.5 animate-spin"
-                        >
-                            <path
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                d="M12 3v3m6.364-.364-2.121 2.121M21 12h-3m.364 6.364-2.121-2.121M12 21v-3m-6.364.364 2.121-2.121M3 12h3m-.364-6.364 2.121 2.121"
-                            />
-                        </svg>
-
-                        {{ isCancelling ? "Membatalkan..." : "Ya, Batalkan" }}
-                    </button>
-                </div>
+                </Transition>
             </div>
-        </div>
+        </Teleport>
+
+        <!-- CUSTOM ALERT -->
+        <Teleport to="body">
+            <Transition
+                appear
+                enter-active-class="transition duration-200 ease-out"
+                enter-from-class="opacity-0 scale-95"
+                enter-to-class="opacity-100 scale-100"
+                leave-active-class="transition duration-150 ease-in"
+                leave-from-class="opacity-100 scale-100"
+                leave-to-class="opacity-0 scale-95"
+            >
+                <div
+                    v-if="showAlert"
+                    class="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+                    @click.self="closeAlert"
+                >
+                    <div
+                        class="w-full max-w-sm overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl dark:border-white/10 dark:bg-[#161615]"
+                    >
+                        <!-- CONTENT -->
+                        <div class="px-6 pb-5 pt-6">
+                            <div
+                                class="mx-auto flex h-14 w-14 items-center justify-center rounded-full"
+                                :class="alertIconClass"
+                            >
+                                <!-- ERROR -->
+                                <svg
+                                    v-if="alertType === 'error'"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke-width="2"
+                                    stroke="currentColor"
+                                    class="h-7 w-7"
+                                >
+                                    <path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        d="M12 9v3.75m0 3.75h.008M10.29 3.86l-7.08 12.25A2 2 0 0 0 5 19.11h14a2 2 0 0 0 1.79-3L13.71 3.86a2 2 0 0 0-3.42 0Z"
+                                    />
+                                </svg>
+
+                                <!-- WARNING -->
+                                <svg
+                                    v-else-if="alertType === 'warning'"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke-width="2"
+                                    stroke="currentColor"
+                                    class="h-7 w-7"
+                                >
+                                    <path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        d="M12 9v3.75m0 3.75h.008M10.29 3.86l-7.08 12.25A2 2 0 0 0 5 19.11h14a2 2 0 0 0 1.79-3L13.71 3.86a2 2 0 0 0-3.42 0Z"
+                                    />
+                                </svg>
+
+                                <!-- SUCCESS -->
+                                <svg
+                                    v-else
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke-width="2"
+                                    stroke="currentColor"
+                                    class="h-7 w-7"
+                                >
+                                    <path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        d="M5 13l4 4L19 7"
+                                    />
+                                </svg>
+                            </div>
+
+                            <div class="mt-4 text-center">
+                                <h3
+                                    class="text-base font-semibold text-[#1b1b18] dark:text-[#EDEDEC]"
+                                >
+                                    {{ alertTitle }}
+                                </h3>
+
+                                <p
+                                    class="mt-2 text-sm leading-6 text-[#706f6c] dark:text-[#A1A09A]"
+                                >
+                                    {{ alertMessage }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- FOOTER -->
+                        <div class="border-t border-black/10 px-6 py-4 dark:border-white/10">
+                            <button
+                                type="button"
+                                class="w-full rounded-xl bg-[#f53003] px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-[#d92a02] focus:outline-none focus:ring-2 focus:ring-[#f53003]/30 focus:ring-offset-2 dark:focus:ring-offset-[#161615]"
+                                @click="closeAlert"
+                            >
+                                Tutup
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </Transition>
+        </Teleport>
     </div>
 </template>
 

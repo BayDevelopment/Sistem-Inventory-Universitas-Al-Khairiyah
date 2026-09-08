@@ -36,9 +36,12 @@ class Procurement extends Model
         'quantity',
         'type',
         'reason',
+        'subject',
+        'attachments',
         'requester_signature',
         'requested_at',
         'status',
+        'document_number',
         'processed_by',
         'approver_signature',
         'processed_at',
@@ -52,6 +55,7 @@ class Procurement extends Model
     {
         return [
             'quantity' => 'integer',
+            'attachments' => 'array',
             'requested_at' => 'datetime',
             'processed_at' => 'datetime',
         ];

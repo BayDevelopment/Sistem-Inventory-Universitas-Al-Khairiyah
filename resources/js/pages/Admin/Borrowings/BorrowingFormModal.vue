@@ -1,4 +1,3 @@
-```vue
 <script setup lang="ts">
 import {
     computed,
@@ -112,17 +111,11 @@ interface BorrowingFormData {
 const props = withDefaults(
     defineProps<{
         show: boolean;
-
         faculties?: Faculty[];
-
         roomInventories?: RoomInventory[];
-
         borrowings?: Borrowing[];
-
         borrowing?: Borrowing | null;
-
         processing?: boolean;
-
         errors?: Record<string, string>;
     }>(),
     {
@@ -143,11 +136,8 @@ const props = withDefaults(
 
 const emit = defineEmits<{
     (e: "close"): void;
-
-    (
-        e: "submit",
-        data: BorrowingFormData,
-    ): void;
+    (e: "submit", data: BorrowingFormData): void;
+    (e: "validation-error", message: string, title?: string): void;
 }>();
 
 /*
@@ -169,8 +159,53 @@ const localError = ref<string | null>(null);
 
 /*
 |--------------------------------------------------------------------------
+| Custom Alert
+|--------------------------------------------------------------------------
+*/
+
+type AlertType = "error" | "warning" | "success";
+
+const showAlert = ref(false);
+const alertType = ref<AlertType>("error");
+const alertTitle = ref("Terjadi Kesalahan");
+const alertMessage = ref("");
+
+const alertIconClass = computed(() => {
+    switch (alertType.value) {
+        case "warning":
+            return "bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400";
+
+        case "success":
+            return "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400";
+
+        default:
+            return "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400";
+    }
+});
+
+const openAlert = (
+    message: string,
+    title = "Terjadi Kesalahan",
+    type: AlertType = "error",
+) => {
+    alertTitle.value = title;
+    alertMessage.value = message;
+    alertType.value = type;
+    showAlert.value = true;
+};
+
+const closeAlert = () => {
+    showAlert.value = false;
+    alertMessage.value = "";
+};
+
+/*
+|--------------------------------------------------------------------------
 | Active Borrowing Status
 |--------------------------------------------------------------------------
+|
+| Status yang dianggap masih menggunakan inventory.
+|
 */
 
 const activeStatuses = [
@@ -185,15 +220,6 @@ const activeStatuses = [
 |--------------------------------------------------------------------------
 */
 
-/**
- * Normalisasi tanggal supaya aman dibandingkan.
- *
- * Input dari datetime-local:
- * 2026-09-15T08:00
- *
- * Input dari database:
- * 2026-09-15 / 2026-09-15 08:00:00
- */
 const parseDate = (
     value?: string | null,
 ): number | null => {
@@ -201,13 +227,13 @@ const parseDate = (
         return null;
     }
 
-    const normalized =
-        value.includes("T")
-            ? value
-            : value.replace(" ", "T");
+    const normalized = value.includes("T")
+        ? value
+        : value.replace(" ", "T");
 
-    const timestamp =
-        new Date(normalized).getTime();
+    const timestamp = new Date(
+        normalized,
+    ).getTime();
 
     if (Number.isNaN(timestamp)) {
         return null;
@@ -220,6 +246,21 @@ const parseDate = (
 |--------------------------------------------------------------------------
 | Check Date Overlap
 |--------------------------------------------------------------------------
+|
+| Contoh:
+|
+| Existing : 10:00 - 12:00
+| Request  : 10:00 - 12:00
+| Result   : CONFLICT
+|
+| Existing : 10:00 - 12:00
+| Request  : 11:00 - 13:00
+| Result   : CONFLICT
+|
+| Existing : 10:00 - 12:00
+| Request  : 12:00 - 13:00
+| Result   : CONFLICT
+|
 */
 
 const datesOverlap = (
@@ -228,11 +269,13 @@ const datesOverlap = (
     existingStart?: string | null,
     existingEnd?: string | null,
 ): boolean => {
-    const start =
-        parseDate(requestedStart);
+    const start = parseDate(
+        requestedStart,
+    );
 
-    const end =
-        parseDate(requestedEnd);
+    const end = parseDate(
+        requestedEnd,
+    );
 
     const existingBorrowDate =
         parseDate(existingStart);
@@ -276,7 +319,7 @@ const getInventoryConflict = (
             (borrowing) => {
                 /*
                 |--------------------------------------------------------------------------
-                | Hanya status aktif yang mengunci aset
+                | Hanya status aktif
                 |--------------------------------------------------------------------------
                 */
 
@@ -290,7 +333,7 @@ const getInventoryConflict = (
 
                 /*
                 |--------------------------------------------------------------------------
-                | Inventory harus sama
+                | Harus inventory yang sama
                 |--------------------------------------------------------------------------
                 */
 
@@ -304,7 +347,7 @@ const getInventoryConflict = (
 
                 /*
                 |--------------------------------------------------------------------------
-                | Saat EDIT, borrowing milik sendiri tidak dianggap konflik
+                | Saat edit, jangan anggap data sendiri sebagai conflict
                 |--------------------------------------------------------------------------
                 */
 
@@ -312,16 +355,17 @@ const getInventoryConflict = (
                     props.borrowing?.id &&
                     Number(
                         borrowing.id,
-                    ) === Number(
-                        props.borrowing.id,
-                    )
+                    ) ===
+                        Number(
+                            props.borrowing.id,
+                        )
                 ) {
                     return false;
                 }
 
                 /*
                 |--------------------------------------------------------------------------
-                | Cek overlap tanggal
+                | Cek overlap tanggal + waktu
                 |--------------------------------------------------------------------------
                 */
 
@@ -346,13 +390,6 @@ const getInventoryConflict = (
 const isInventoryUnavailable = (
     inventoryId: number,
 ): boolean => {
-    /*
-    |--------------------------------------------------------------------------
-    | Jika tanggal belum lengkap,
-    | jangan disable berdasarkan tanggal.
-    |--------------------------------------------------------------------------
-    */
-
     if (
         !form.value.borrow_date ||
         !form.value.expected_return_date
@@ -360,8 +397,10 @@ const isInventoryUnavailable = (
         return false;
     }
 
-    return !!getInventoryConflict(
-        inventoryId,
+    return (
+        getInventoryConflict(
+            inventoryId,
+        ) !== null
     );
 };
 
@@ -383,15 +422,13 @@ const getInventoryUnavailableMessage = (
         return "";
     }
 
-    const start =
-        formatDate(
-            conflict.borrow_date,
-        );
+    const start = formatDateTime(
+        conflict.borrow_date,
+    );
 
-    const end =
-        formatDate(
-            conflict.expected_return_date,
-        );
+    const end = formatDateTime(
+        conflict.expected_return_date,
+    );
 
     if (start && end) {
         return `Tidak tersedia — sudah dipesan ${start} s/d ${end}`;
@@ -404,24 +441,16 @@ const getInventoryUnavailableMessage = (
 |--------------------------------------------------------------------------
 | Available Inventory
 |--------------------------------------------------------------------------
-|
-| Semua inventory tetap ditampilkan.
-|
-| Inventory yang bentrok dengan tanggal dipisahkan
-| ke bagian unavailable sehingga user dapat melihat
-| kenapa aset tidak bisa dipilih.
-|
 */
 
-const availableInventories =
-    computed(() => {
-        return props.roomInventories.filter(
-            (inventory) =>
-                !isInventoryUnavailable(
-                    inventory.id,
-                ),
-        );
-    });
+const availableInventories = computed(() => {
+    return props.roomInventories.filter(
+        (inventory) =>
+            !isInventoryUnavailable(
+                inventory.id,
+            ),
+    );
+});
 
 const unavailableInventories =
     computed(() => {
@@ -441,10 +470,10 @@ const unavailableInventories =
 
 const selectedInventory =
     computed(() => {
-        if (
-            form.value.room_inventory_id ===
-            null
-        ) {
+        const inventoryId =
+            form.value.room_inventory_id;
+
+        if (inventoryId === null) {
             return null;
         }
 
@@ -454,11 +483,32 @@ const selectedInventory =
                     Number(
                         inventory.id,
                     ) ===
-                    Number(
-                        form.value
-                            .room_inventory_id,
-                    ),
+                    Number(inventoryId),
             ) ?? null
+        );
+    });
+
+/*
+|--------------------------------------------------------------------------
+| Selected Inventory Conflict
+|--------------------------------------------------------------------------
+|
+| Ini sengaja dibuat computed sendiri agar mudah digunakan
+| oleh template, watcher, dan handleSubmit.
+|
+*/
+
+const selectedInventoryConflict =
+    computed(() => {
+        const inventoryId =
+            form.value.room_inventory_id;
+
+        if (inventoryId === null) {
+            return null;
+        }
+
+        return getInventoryConflict(
+            inventoryId,
         );
     });
 
@@ -476,15 +526,13 @@ const dateWarning = computed(() => {
         return null;
     }
 
-    const borrowDate =
-        parseDate(
-            form.value.borrow_date,
-        );
+    const borrowDate = parseDate(
+        form.value.borrow_date,
+    );
 
-    const returnDate =
-        parseDate(
-            form.value.expected_return_date,
-        );
+    const returnDate = parseDate(
+        form.value.expected_return_date,
+    );
 
     if (
         borrowDate === null ||
@@ -513,6 +561,10 @@ const availabilityMessage =
             !form.value.expected_return_date
         ) {
             return "Pilih tanggal peminjaman dan pengembalian untuk melihat ketersediaan aset.";
+        }
+
+        if (dateWarning.value) {
+            return "Periksa kembali tanggal peminjaman dan pengembalian.";
         }
 
         if (
@@ -549,18 +601,29 @@ const CANVAS_HEIGHT = 250;
 |--------------------------------------------------------------------------
 | Form Validation
 |--------------------------------------------------------------------------
+|
+| IMPORTANT:
+| Jangan menjadikan isValid sebagai disabled button.
+|
+| isValid hanya digunakan sebagai informasi validasi.
+| handleSubmit() tetap harus bisa dipanggil agar alert
+| dapat ditampilkan.
+|
 */
 
 const isValid = computed(() => {
+    const inventoryId =
+        form.value.room_inventory_id;
+
     return (
         form.value.faculty_id !== null &&
-        form.value.room_inventory_id !== null &&
+        inventoryId !== null &&
         form.value.borrow_date.trim() !== "" &&
         form.value.expected_return_date.trim() !== "" &&
         form.value.purpose.trim() !== "" &&
         !dateWarning.value &&
         !isInventoryUnavailable(
-            form.value.room_inventory_id,
+            inventoryId,
         )
     );
 });
@@ -603,10 +666,10 @@ const resetForm = () => {
 
     localError.value = null;
 
+    closeAlert();
+
     isDrawing.value = false;
-
     hasSignature.value = false;
-
     canvasContext = null;
 
     nextTick(() => {
@@ -630,7 +693,8 @@ const initializeCanvas = () => {
     canvas.width = CANVAS_WIDTH;
     canvas.height = CANVAS_HEIGHT;
 
-    const context = canvas.getContext("2d");
+    const context =
+        canvas.getContext("2d");
 
     if (!context) {
         canvasContext = null;
@@ -647,12 +711,10 @@ const initializeCanvas = () => {
     );
 
     canvasContext.lineWidth = 2.5;
-
     canvasContext.lineCap = "round";
-
     canvasContext.lineJoin = "round";
-
-    canvasContext.strokeStyle = "#1b1b18";
+    canvasContext.strokeStyle =
+        "#1b1b18";
 
     hasSignature.value = false;
 
@@ -859,93 +921,148 @@ const clearSignature = () => {
 const handleSubmit = () => {
     localError.value = null;
 
+    /*
+    |--------------------------------------------------------------------------
+    | Validasi dasar
+    |--------------------------------------------------------------------------
+    */
+
     if (!isValid.value) {
         if (dateWarning.value) {
-            localError.value =
-                dateWarning.value;
-        } else if (
-            form.value.room_inventory_id !==
-                null &&
-            isInventoryUnavailable(
-                form.value.room_inventory_id,
-            )
-        ) {
-            localError.value =
-                "Aset yang dipilih tidak tersedia pada rentang tanggal tersebut. Silakan pilih aset atau tanggal lain.";
-        } else {
-            localError.value =
-                "Lengkapi seluruh data peminjaman yang wajib diisi.";
+            localError.value = dateWarning.value;
+
+            emit(
+                "validation-error",
+                dateWarning.value,
+                "Tanggal Tidak Valid",
+            );
+
+            return;
         }
 
-        return;
-    }
+        if (
+            form.value.room_inventory_id !== null &&
+            isInventoryUnavailable(form.value.room_inventory_id)
+        ) {
+            const message =
+                "Aset yang dipilih tidak tersedia pada rentang tanggal tersebut. " +
+                "Silakan pilih aset lain atau ubah tanggal peminjaman.";
 
-    const borrowDate =
-        parseDate(
-            form.value.borrow_date,
+            localError.value = message;
+
+            emit(
+                "validation-error",
+                message,
+                "Aset Tidak Tersedia",
+            );
+
+            return;
+        }
+
+        const message =
+            "Lengkapi seluruh data peminjaman sebelum melanjutkan.";
+
+        localError.value = message;
+
+        emit(
+            "validation-error",
+            message,
+            "Data Belum Lengkap",
         );
 
-    const expectedReturnDate =
-        parseDate(
-            form.value
-                .expected_return_date,
+        return;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Validasi tanggal
+    |--------------------------------------------------------------------------
+    */
+
+    const borrowDate = parseDate(form.value.borrow_date);
+    const expectedReturnDate = parseDate(
+        form.value.expected_return_date,
+    );
+
+    if (borrowDate === null || expectedReturnDate === null) {
+        const message =
+            "Format tanggal peminjaman atau tanggal pengembalian tidak valid.";
+
+        localError.value = message;
+
+        emit(
+            "validation-error",
+            message,
+            "Tanggal Tidak Valid",
         );
 
-    if (
-        borrowDate === null ||
-        expectedReturnDate === null
-    ) {
-        localError.value =
-            "Format tanggal peminjaman tidak valid.";
+        return;
+    }
+
+    if (expectedReturnDate < borrowDate) {
+        const message =
+            "Tanggal pengembalian harus sama atau setelah tanggal peminjaman.";
+
+        localError.value = message;
+
+        emit(
+            "validation-error",
+            message,
+            "Tanggal Tidak Valid",
+        );
 
         return;
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Re-check availability
+    |--------------------------------------------------------------------------
+    */
+
     if (
-        expectedReturnDate <
-        borrowDate
+        form.value.room_inventory_id !== null &&
+        isInventoryUnavailable(form.value.room_inventory_id)
     ) {
-        localError.value =
-            "Tanggal pengembalian tidak boleh lebih awal dari tanggal peminjaman.";
+        const message =
+            "Aset yang dipilih baru saja menjadi tidak tersedia. " +
+            "Silakan pilih aset lain.";
+
+        localError.value = message;
+
+        emit(
+            "validation-error",
+            message,
+            "Aset Tidak Tersedia",
+        );
 
         return;
     }
 
-    if (
-        form.value.room_inventory_id !==
-            null &&
-        isInventoryUnavailable(
-            form.value.room_inventory_id,
-        )
-    ) {
-        localError.value =
-            "Aset yang dipilih sudah digunakan pada rentang tanggal tersebut.";
+    /*
+    |--------------------------------------------------------------------------
+    | Signature
+    |--------------------------------------------------------------------------
+    |
+    | Tidak perlu dipanggil ulang di sini — saveCanvasAsBase64()
+    | sudah otomatis dijalankan setiap kali stopDrawing() terjadi,
+    | jadi form.applicant_signature sudah ter-update duluan.
+    |
+    */
 
-        return;
-    }
-
-    if (hasSignature.value) {
-        saveCanvasAsBase64();
-    }
+    /*
+    |--------------------------------------------------------------------------
+    | Submit
+    |--------------------------------------------------------------------------
+    */
 
     emit("submit", {
-        faculty_id:
-            form.value.faculty_id,
-
-        room_inventory_id:
-            form.value.room_inventory_id,
-
-        borrow_date:
-            form.value.borrow_date,
-
-        expected_return_date:
-            form.value.expected_return_date,
-
-        purpose:
-            form.value.purpose.trim(),
-
-        applicant_signature:
-            form.value.applicant_signature,
+        faculty_id: form.value.faculty_id,
+        room_inventory_id: form.value.room_inventory_id,
+        borrow_date: form.value.borrow_date,
+        expected_return_date: form.value.expected_return_date,
+        purpose: form.value.purpose.trim(),
+        applicant_signature: form.value.applicant_signature,
     });
 };
 
@@ -959,6 +1076,8 @@ const close = () => {
     if (props.processing) {
         return;
     }
+
+    closeAlert();
 
     emit("close");
 };
@@ -1021,41 +1140,57 @@ const formatDate = (
 
 /*
 |--------------------------------------------------------------------------
-| Watch Selected Inventory
-|--------------------------------------------------------------------------
-|
-| Jika user sudah memilih Laptop A kemudian mengubah
-| tanggal sehingga Laptop A bentrok, otomatis dilepas.
+| Format Date + Time
 |--------------------------------------------------------------------------
 */
 
-watch(
-    [
-        () => form.value.borrow_date,
-        () =>
-            form.value
-                .expected_return_date,
-    ],
-    () => {
-        if (
-            form.value
-                .room_inventory_id ===
-            null
-        ) {
-            return;
-        }
+const formatDateTime = (
+    value?: string | null,
+) => {
+    if (!value) {
+        return "";
+    }
 
-        if (
-            isInventoryUnavailable(
-                form.value
-                    .room_inventory_id,
-            )
-        ) {
-            form.value.room_inventory_id =
-                null;
-        }
-    },
-);
+    const timestamp =
+        parseDate(value);
+
+    if (timestamp === null) {
+        return "";
+    }
+
+    return new Intl.DateTimeFormat(
+        "id-ID",
+        {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+        },
+    ).format(
+        new Date(timestamp),
+    );
+};
+
+/*
+|--------------------------------------------------------------------------
+| IMPORTANT:
+| Tidak ada lagi watcher yang mengosongkan inventory ketika conflict.
+|--------------------------------------------------------------------------
+|
+| Sebelumnya:
+|
+| if (isInventoryUnavailable(...)) {
+|     form.value.room_inventory_id = null;
+| }
+|
+| Ini dihapus karena:
+|
+| 1. Inventory yang sedang dipilih harus tetap diketahui.
+| 2. handleSubmit() harus bisa mendeteksi conflict.
+| 3. Alert harus menampilkan informasi conflict kepada mahasiswa.
+|
+*/
 
 /*
 |--------------------------------------------------------------------------
@@ -1068,7 +1203,95 @@ watch(
     (show) => {
         if (show) {
             resetForm();
+        } else {
+            closeAlert();
         }
+    },
+);
+
+/*
+|--------------------------------------------------------------------------
+| Watch Inventory Conflict
+|--------------------------------------------------------------------------
+|
+| Munculkan alert secara proaktif begitu aset yang sedang dipilih
+| ternyata bentrok dengan peminjaman aktif lain — baik karena user
+| memilih aset yang sudah dipakai, maupun karena user mengubah
+| tanggal setelah memilih aset sehingga jadi bentrok.
+|
+| Alert hanya dipicu saat modal terbuka dan ada inventory yang
+| benar-benar dipilih, supaya tidak muncul saat form baru direset.
+|
+*/
+
+watch(
+    selectedInventoryConflict,
+    (conflict) => {
+        if (!props.show) {
+            return;
+        }
+
+        if (!conflict || form.value.room_inventory_id === null) {
+            return;
+        }
+
+        const inventory = selectedInventory.value;
+
+        if (!inventory) {
+            return;
+        }
+
+        const message =
+            getInventoryUnavailableMessage(inventory);
+
+        localError.value = message;
+
+        openAlert(
+            message,
+            "Aset Sedang Digunakan",
+            "warning",
+        );
+    },
+);
+
+/*
+|--------------------------------------------------------------------------
+| Watch Backend Errors
+|--------------------------------------------------------------------------
+*/
+
+watch(
+    () => props.errors,
+    (errors) => {
+        if (!props.show || !errors) {
+            return;
+        }
+
+        const messages =
+            Object.values(errors).filter(
+                (message) =>
+                    typeof message ===
+                        "string" &&
+                    message.trim() !== "",
+            );
+
+        if (messages.length === 0) {
+            return;
+        }
+
+        const message =
+            messages.join(" ");
+
+        localError.value = message;
+
+        openAlert(
+            message,
+            "Gagal Menyimpan Data",
+            "error",
+        );
+    },
+    {
+        deep: true,
     },
 );
 
@@ -1084,6 +1307,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+    <!--
+    |--------------------------------------------------------------------------
+    | Main Modal
+    |--------------------------------------------------------------------------
+    -->
+
     <div
         v-if="show"
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
@@ -1141,7 +1370,7 @@ onBeforeUnmount(() => {
             <div
                 class="max-h-[75vh] overflow-y-auto px-6 py-5"
             >
-                <!-- Error -->
+                <!-- Inline Error -->
                 <div
                     v-if="
                         localError ||
@@ -1330,17 +1559,6 @@ onBeforeUnmount(() => {
                             <span class="text-red-500">*</span>
                         </label>
 
-                        <!--
-                        |--------------------------------------------------------------------------
-                        | Native select
-                        |--------------------------------------------------------------------------
-                        |
-                        | Asset yang bentrok tetap ditampilkan tetapi disabled.
-                        | Ini membuat user tahu aset tersebut memang ada,
-                        | tetapi sedang tidak tersedia pada periode yang dipilih.
-                        |
-                        -->
-
                         <select
                             id="room_inventory_id"
                             v-model="form.room_inventory_id"
@@ -1354,7 +1572,6 @@ onBeforeUnmount(() => {
                                 Pilih inventaris
                             </option>
 
-                            <!-- Available -->
                             <option
                                 v-for="inventory in availableInventories"
                                 :key="inventory.id"
@@ -1363,7 +1580,6 @@ onBeforeUnmount(() => {
                                 {{ getInventoryLabel(inventory) }}
                             </option>
 
-                            <!-- Unavailable -->
                             <option
                                 v-for="inventory in unavailableInventories"
                                 :key="`unavailable-${inventory.id}`"
@@ -1384,12 +1600,27 @@ onBeforeUnmount(() => {
                             </option>
                         </select>
 
+                        <!-- Selected inventory conflict -->
+                        <div
+                            v-if="selectedInventoryConflict"
+                            class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/50 dark:bg-amber-950/20"
+                        >
+                            <p
+                                class="text-xs font-medium text-amber-700 dark:text-amber-400"
+                            >
+                                Aset tidak tersedia pada periode yang dipilih.
+                            </p>
+
+                            <p
+                                class="mt-1 text-xs text-amber-600 dark:text-amber-500"
+                            >
+                                Silakan pilih aset atau tanggal lain.
+                            </p>
+                        </div>
+
                         <p
-                            v-if="
-                                selectedInventory &&
-                                !isInventoryUnavailable(
-                                    selectedInventory.id,
-                                )
+                            v-else-if="
+                                selectedInventory
                             "
                             class="mt-2 text-xs text-emerald-600 dark:text-emerald-400"
                         >
@@ -1569,12 +1800,26 @@ onBeforeUnmount(() => {
                     Batal
                 </button>
 
+                <!--
+                |--------------------------------------------------------------------------
+                | IMPORTANT:
+                | Jangan disable berdasarkan !isValid.
+                |--------------------------------------------------------------------------
+                |
+                | Kalau !isValid dipakai di disabled:
+                |
+                | :disabled="processing || !isValid"
+                |
+                | maka ketika inventory conflict, tombol tidak bisa
+                | diklik dan handleSubmit() tidak pernah berjalan.
+                |
+                | Sekarang hanya processing yang membuat tombol disabled.
+                |
+                -->
+
                 <button
                     type="button"
-                    :disabled="
-                        processing ||
-                        !isValid
-                    "
+                    :disabled="processing"
                     class="rounded-xl bg-[#f53003] px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-[#d92a02] disabled:cursor-not-allowed disabled:opacity-50"
                     @click="handleSubmit"
                 >
@@ -1617,5 +1862,147 @@ onBeforeUnmount(() => {
             </div>
         </div>
     </div>
+
+    <!--
+    |--------------------------------------------------------------------------
+    | Custom Alert
+    |--------------------------------------------------------------------------
+    -->
+
+    <Teleport to="body">
+        <Transition name="alert">
+            <div
+                v-if="showAlert"
+                class="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+                @click.self="closeAlert"
+            >
+                <div
+                    class="w-full max-w-sm overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl dark:border-white/10 dark:bg-[#161615]"
+                >
+                    <!-- Content -->
+                    <div
+                        class="px-6 pb-5 pt-6"
+                    >
+                        <!-- Icon -->
+                        <div
+                            class="mx-auto flex h-14 w-14 items-center justify-center rounded-full"
+                            :class="alertIconClass"
+                        >
+                            <!-- Error -->
+                            <svg
+                                v-if="
+                                    alertType ===
+                                    'error'
+                                "
+                                xmlns="http://www.w3.org/2000/svg"
+                                class="h-7 w-7"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                                stroke-width="2"
+                            >
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    d="M12 9v3.75m0 3.75h.008M10.29 3.86l-7.08 12.25A2 2 0 005 19.11h14a2 2 0 001.79-3L13.71 3.86a2 2 0 00-3.42 0z"
+                                />
+                            </svg>
+
+                            <!-- Warning -->
+                            <svg
+                                v-else-if="
+                                    alertType ===
+                                    'warning'
+                                "
+                                xmlns="http://www.w3.org/2000/svg"
+                                class="h-7 w-7"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                                stroke-width="2"
+                            >
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    d="M12 9v3.75m0 3.75h.008M10.29 3.86l-7.08 12.25A2 2 0 005 19.11h14a2 2 0 001.79-3L13.71 3.86a2 2 0 00-3.42 0z"
+                                />
+                            </svg>
+
+                            <!-- Success -->
+                            <svg
+                                v-else
+                                xmlns="http://www.w3.org/2000/svg"
+                                class="h-7 w-7"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                                stroke-width="2"
+                            >
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    d="M5 13l4 4L19 7"
+                                />
+                            </svg>
+                        </div>
+
+                        <!-- Text -->
+                        <div
+                            class="mt-4 text-center"
+                        >
+                            <h3
+                                class="text-base font-semibold text-[#1b1b18] dark:text-[#EDEDEC]"
+                            >
+                                {{ alertTitle }}
+                            </h3>
+
+                            <p
+                                class="mt-2 text-sm leading-6 text-[#706f6c] dark:text-[#A1A09A]"
+                            >
+                                {{ alertMessage }}
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Footer -->
+                    <div
+                        class="border-t border-black/10 px-6 py-4 dark:border-white/10"
+                    >
+                        <button
+                            type="button"
+                            class="w-full rounded-xl bg-[#f53003] px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-[#d92a02] focus:outline-none focus:ring-2 focus:ring-[#f53003]/30 focus:ring-offset-2 dark:focus:ring-offset-[#161615]"
+                            @click="closeAlert"
+                        >
+                            Tutup
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </Transition>
+    </Teleport>
 </template>
-```
+
+<style scoped>
+.alert-enter-active,
+.alert-leave-active {
+    transition: opacity 0.2s ease;
+}
+
+.alert-enter-active > div > div,
+.alert-leave-active > div > div {
+    transition:
+        opacity 0.2s ease,
+        transform 0.2s ease;
+}
+
+.alert-enter-from,
+.alert-leave-to {
+    opacity: 0;
+}
+
+.alert-enter-from > div > div,
+.alert-leave-to > div > div {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+}
+</style>
