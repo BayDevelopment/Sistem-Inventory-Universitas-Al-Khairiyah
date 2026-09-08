@@ -147,10 +147,6 @@ const statusClass = computed(() => {
     }
 });
 
-const requesterSignatureUrl = computed(() => {
-    return props.procurement?.requester_signature ?? null;
-});
-
 const approverSignatureUrl = computed(() => {
     return props.procurement?.approver_signature ?? null;
 });
@@ -158,7 +154,7 @@ const approverSignatureUrl = computed(() => {
 const hasSignatures = computed(() => {
     return Boolean(
         props.procurement?.requester_signature ||
-        props.procurement?.approver_signature,
+            props.procurement?.approver_signature,
     );
 });
 
@@ -195,16 +191,30 @@ const formatDate = (value?: string | null): string => {
     }).format(date);
 };
 
+/*
+|--------------------------------------------------------------------------
+| SIGNATURE CANVAS
+|--------------------------------------------------------------------------
+*/
+
 const signatureCanvas = ref<HTMLCanvasElement | null>(null);
 const isDrawing = ref(false);
 const hasSignature = ref(false);
 
 let canvasContext: CanvasRenderingContext2D | null = null;
 
+// Bumped every time the canvas is (re)initialized so an in-flight
+// image.onload/onerror from a previous init can be safely ignored.
+// Prevents a stale approver signature image from a previously opened
+// procurement being drawn onto the canvas after rapid close/reopen or
+// switching between records.
+let canvasInitToken = 0;
+
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 250;
 
 const resetCanvasState = () => {
+    canvasInitToken += 1;
     isDrawing.value = false;
     hasSignature.value = false;
     canvasContext = null;
@@ -216,6 +226,8 @@ const initializeCanvas = () => {
     if (!canvas) {
         return;
     }
+
+    const initToken = ++canvasInitToken;
 
     canvas.width = CANVAS_WIDTH;
     canvas.height = CANVAS_HEIGHT;
@@ -249,20 +261,24 @@ const initializeCanvas = () => {
     const image = new Image();
 
     image.onload = () => {
-        if (!canvasContext) {
+        // Bail out if the canvas was re-initialized (or the component
+        // unmounted) while this image was loading.
+        if (initToken !== canvasInitToken || !canvasContext) {
             return;
         }
 
         canvasContext.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
         canvasContext.drawImage(image, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
         hasSignature.value = true;
-
         form.value.approver_signature = existingSignature;
     };
 
     image.onerror = () => {
+        if (initToken !== canvasInitToken) {
+            return;
+        }
+
         hasSignature.value = false;
         form.value.approver_signature = null;
     };
@@ -335,7 +351,6 @@ const drawSignature = (event: PointerEvent) => {
     event.preventDefault();
 
     canvasContext.lineTo(position.x, position.y);
-
     canvasContext.stroke();
 };
 
@@ -360,7 +375,6 @@ const saveSignature = () => {
 
     if (!canvas || !hasSignature.value) {
         form.value.approver_signature = null;
-
         return;
     }
 
@@ -381,20 +395,17 @@ const clearSignature = () => {
     form.value.approver_signature = null;
 };
 
-const syncForm = (
-    procurement:
-        | Procurement
-        | null
-        | undefined,
-) => {
+/*
+|--------------------------------------------------------------------------
+| SYNC FORM
+|--------------------------------------------------------------------------
+*/
+
+const syncForm = (procurement: Procurement | null | undefined) => {
     form.value = {
         action: "approve",
-        approver_signature:
-            procurement?.approver_signature ??
-            null,
-        admin_note:
-            procurement?.admin_note ??
-            null,
+        approver_signature: procurement?.approver_signature ?? null,
+        admin_note: procurement?.admin_note ?? null,
     };
 
     errorMessage.value = "";
@@ -414,16 +425,45 @@ watch(
     },
 );
 
+/*
+|--------------------------------------------------------------------------
+| OPEN / CLOSE SIDE EFFECTS
+|--------------------------------------------------------------------------
+|
+| Keyboard (Escape), body scroll lock, form sync, and canvas init are all
+| driven off the same `show` transition, so they're combined into a
+| single watcher to keep the open/close lifecycle in one place and avoid
+| the ordering ambiguity of multiple watchers on the same source.
+|--------------------------------------------------------------------------
+*/
+
+const handleKeydown = (event: KeyboardEvent) => {
+    if (event.key === "Escape" && props.show && !props.processing) {
+        handleClose();
+    }
+};
+
+let previousBodyOverflow = "";
+
 watch(
     () => props.show,
     async (isOpen) => {
+        if (typeof window === "undefined") {
+            return;
+        }
+
         if (!isOpen) {
+            window.removeEventListener("keydown", handleKeydown);
+            document.body.style.overflow = previousBodyOverflow;
             isDrawing.value = false;
             return;
         }
 
-        errorMessage.value = "";
+        window.addEventListener("keydown", handleKeydown);
+        previousBodyOverflow = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
 
+        errorMessage.value = "";
         syncForm(props.procurement);
 
         await nextTick();
@@ -432,23 +472,7 @@ watch(
             initializeCanvas();
         }
     },
-);
-
-const handleKeydown = (event: KeyboardEvent) => {
-    if (event.key === "Escape" && props.show && !props.processing) {
-        handleClose();
-    }
-};
-
-watch(
-    () => props.show,
-    (isOpen) => {
-        if (isOpen) {
-            window.addEventListener("keydown", handleKeydown);
-        } else {
-            window.removeEventListener("keydown", handleKeydown);
-        }
-    },
+    { immediate: true },
 );
 
 const setAction = (action: ApprovalAction) => {
@@ -469,14 +493,12 @@ const handleSubmit = () => {
 
     if (!props.procurement) {
         errorMessage.value = "Data pengadaan tidak ditemukan.";
-
         return;
     }
 
     if (!isPending.value) {
         errorMessage.value =
             "Pengadaan ini sudah diproses dan tidak dapat diverifikasi kembali.";
-
         return;
     }
 
@@ -485,24 +507,20 @@ const handleSubmit = () => {
     }
 
     const approverSignature = form.value.approver_signature?.trim() || null;
-
     const adminNote = form.value.admin_note?.trim() || null;
 
     if (form.value.action === "reject" && !adminNote) {
         errorMessage.value = "Catatan wajib diisi ketika pengadaan ditolak.";
-
         return;
     }
 
     if (form.value.action === "reject" && adminNote.length < 5) {
         errorMessage.value = "Catatan penolakan minimal 5 karakter.";
-
         return;
     }
 
     if (adminNote && adminNote.length > 5000) {
         errorMessage.value = "Catatan verifikasi maksimal 5000 karakter.";
-
         return;
     }
 
@@ -525,7 +543,13 @@ const handleClose = () => {
 };
 
 onBeforeUnmount(() => {
-    window.removeEventListener("keydown", handleKeydown);
+    if (typeof window !== "undefined") {
+        window.removeEventListener("keydown", handleKeydown);
+    }
+
+    if (typeof document !== "undefined" && props.show) {
+        document.body.style.overflow = previousBodyOverflow;
+    }
 
     canvasContext = null;
     isDrawing.value = false;
@@ -594,6 +618,7 @@ onBeforeUnmount(() => {
                                     stroke-width="1.5"
                                     stroke="currentColor"
                                     class="h-5 w-5"
+                                    aria-hidden="true"
                                 >
                                     <path
                                         stroke-linecap="round"
@@ -736,13 +761,9 @@ onBeforeUnmount(() => {
                                         <span
                                             class="col-span-2 text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
                                         >
-                                            {{
-                                                procurement.faculty?.code ?? "—"
-                                            }}
+                                            {{ procurement.faculty?.code ?? "—" }}
                                             -
-                                            {{
-                                                procurement.faculty?.name ?? "—"
-                                            }}
+                                            {{ procurement.faculty?.name ?? "—" }}
                                         </span>
                                     </div>
 
@@ -778,7 +799,8 @@ onBeforeUnmount(() => {
                                                     [
                                                         procurement.room
                                                             ?.building,
-                                                        procurement.room?.floor,
+                                                        procurement.room
+                                                            ?.floor,
                                                     ]
                                                         .filter(Boolean)
                                                         .join(" - ")
@@ -806,9 +828,7 @@ onBeforeUnmount(() => {
                                         </span>
                                     </div>
 
-                                    <div
-                                        class="grid grid-cols-3 gap-4 px-4 py-3"
-                                    >
+                                    <div class="grid grid-cols-3 gap-4 px-4 py-3">
                                         <span
                                             class="text-[11px] font-medium text-[#706f6c] dark:text-[#A1A09A]"
                                         >
@@ -856,9 +876,7 @@ onBeforeUnmount(() => {
                                     Tanda Tangan
                                 </h4>
 
-                                <div
-                                    class="grid grid-cols-1 gap-4 sm:grid-cols-2"
-                                >
+                                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                     <div
                                         v-if="procurement.requester_signature"
                                         class="rounded-xl border border-[#e3e3e0] px-4 py-4 dark:border-[#3E3E3A]"
@@ -938,9 +956,7 @@ onBeforeUnmount(() => {
                                     Keputusan Verifikasi
                                 </h4>
 
-                                <div
-                                    class="grid grid-cols-1 gap-3 sm:grid-cols-2"
-                                >
+                                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                     <button
                                         type="button"
                                         :disabled="processing"
@@ -978,9 +994,7 @@ onBeforeUnmount(() => {
                                             </div>
 
                                             <div>
-                                                <p
-                                                    class="text-xs font-semibold"
-                                                >
+                                                <p class="text-xs font-semibold">
                                                     Setujui
                                                 </p>
 
@@ -1030,9 +1044,7 @@ onBeforeUnmount(() => {
                                             </div>
 
                                             <div>
-                                                <p
-                                                    class="text-xs font-semibold"
-                                                >
+                                                <p class="text-xs font-semibold">
                                                     Tolak
                                                 </p>
 
@@ -1077,9 +1089,7 @@ onBeforeUnmount(() => {
                                     class="w-full resize-none rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2 text-xs text-[#1b1b18] placeholder-[#a1a09a] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433]"
                                 ></textarea>
 
-                                <div
-                                    class="mt-1 flex items-center justify-between"
-                                >
+                                <div class="mt-1 flex items-center justify-between">
                                     <p
                                         v-if="isReject"
                                         class="text-[10px] text-red-500"
@@ -1091,17 +1101,13 @@ onBeforeUnmount(() => {
                                     <span
                                         class="ml-auto text-[10px] text-[#706f6c] dark:text-[#A1A09A]"
                                     >
-                                        {{
-                                            (form.admin_note ?? "").length
-                                        }}/5000
+                                        {{ (form.admin_note ?? "").length }}/5000
                                     </span>
                                 </div>
                             </section>
 
                             <section v-if="isPending">
-                                <div
-                                    class="mb-2 flex items-center justify-between"
-                                >
+                                <div class="mb-2 flex items-center justify-between">
                                     <label
                                         for="procurement-approver-signature"
                                         class="block text-sm font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
@@ -1133,6 +1139,8 @@ onBeforeUnmount(() => {
                                             ref="signatureCanvas"
                                             width="800"
                                             height="250"
+                                            role="img"
+                                            aria-label="Kanvas tanda tangan verifikator"
                                             class="block h-[180px] w-full touch-none cursor-crosshair bg-white dark:bg-[#0f0f0e]"
                                             @pointerdown="startDrawing"
                                             @pointermove="drawSignature"

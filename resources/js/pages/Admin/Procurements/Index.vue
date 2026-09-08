@@ -46,11 +46,7 @@ interface ExistingAttachment {
     name: string;
 }
 
-type ProcurementStatus =
-    | "pending"
-    | "approved"
-    | "rejected"
-    | "completed";
+type ProcurementStatus = "pending" | "approved" | "rejected" | "completed";
 
 type ProcurementType = "replacement" | "new_item";
 
@@ -166,18 +162,25 @@ const toastMessage = ref("");
 
 let toastTimeout: ReturnType<typeof setTimeout> | undefined;
 
+const clearToastTimeout = () => {
+    if (toastTimeout !== undefined) {
+        clearTimeout(toastTimeout);
+        toastTimeout = undefined;
+    }
+};
+
 const showToast = (type: ToastType, message: string) => {
-    if (!message || !message.trim()) {
+    const normalizedMessage = message?.trim();
+
+    if (!normalizedMessage) {
         return;
     }
 
-    toastType.value = type;
-    toastMessage.value = message;
-    toastVisible.value = true;
+    clearToastTimeout();
 
-    if (toastTimeout !== undefined) {
-        clearTimeout(toastTimeout);
-    }
+    toastType.value = type;
+    toastMessage.value = normalizedMessage;
+    toastVisible.value = true;
 
     toastTimeout = setTimeout(() => {
         toastVisible.value = false;
@@ -187,17 +190,13 @@ const showToast = (type: ToastType, message: string) => {
 
 const closeToast = () => {
     toastVisible.value = false;
-
-    if (toastTimeout !== undefined) {
-        clearTimeout(toastTimeout);
-        toastTimeout = undefined;
-    }
+    clearToastTimeout();
 };
 
 watch(
     () => props.toast,
     (toast) => {
-        if (!toast?.message) {
+        if (!toast?.message?.trim()) {
             return;
         }
 
@@ -223,7 +222,9 @@ const isLoading = ref(false);
 */
 
 const searchQuery = ref(props.filters?.search ?? "");
+
 const statusFilter = ref(props.filters?.status ?? "");
+
 const typeFilter = ref(props.filters?.type ?? "");
 
 const facultyFilter = ref(
@@ -263,7 +264,41 @@ const isConfirmProcessing = ref(false);
 /* Delete */
 const isDeleteModalOpen = ref(false);
 const deleteTarget = ref<Procurement | null>(null);
+const deleteTitle = ref("Hapus Pengajuan?");
+const deleteMessage = ref("");
 const isDeleteProcessing = ref(false);
+
+/*
+|--------------------------------------------------------------------------
+| Body Scroll Lock
+|--------------------------------------------------------------------------
+|
+| Confirmation modal di Index.vue mempunyai lifecycle sendiri.
+| Jangan biarkan modal meninggalkan body dalam keadaan overflow hidden.
+|
+|--------------------------------------------------------------------------
+*/
+
+let previousBodyOverflow = "";
+
+const lockBodyScroll = () => {
+    if (typeof document === "undefined") {
+        return;
+    }
+
+    previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+};
+
+const restoreBodyScroll = () => {
+    if (typeof document === "undefined") {
+        return;
+    }
+
+    document.body.style.overflow = previousBodyOverflow;
+
+    previousBodyOverflow = "";
+};
 
 /*
 |--------------------------------------------------------------------------
@@ -296,9 +331,9 @@ const totalProcurements = computed(() => {
 const hasActiveFilters = computed(() => {
     return Boolean(
         searchQuery.value.trim() ||
-            statusFilter.value ||
-            typeFilter.value ||
-            facultyFilter.value,
+        statusFilter.value ||
+        typeFilter.value ||
+        facultyFilter.value,
     );
 });
 
@@ -307,7 +342,7 @@ const hasActiveFilters = computed(() => {
 | Status Statistics
 |--------------------------------------------------------------------------
 |
-| Statistik saat ini menghitung data pada halaman pagination aktif.
+| Statistik berdasarkan data pada halaman pagination aktif.
 |
 |--------------------------------------------------------------------------
 */
@@ -374,16 +409,6 @@ const canDeleteProcurement = computed(() => {
     return isSuperAdmin.value || isFacultyAdmin.value;
 });
 
-/*
-|--------------------------------------------------------------------------
-| Complete Authorization
-|--------------------------------------------------------------------------
-|
-| Hanya super_admin.
-|
-|--------------------------------------------------------------------------
-*/
-
 const canCompleteProcurement = computed(() => {
     return isSuperAdmin.value;
 });
@@ -394,9 +419,7 @@ const canCompleteProcurement = computed(() => {
 |--------------------------------------------------------------------------
 */
 
-const canEditProcurementRow = (
-    procurement: Procurement,
-): boolean => {
+const canEditProcurementRow = (procurement: Procurement): boolean => {
     if (!canManageProcurement.value) {
         return false;
     }
@@ -411,14 +434,11 @@ const canEditProcurementRow = (
 
     return (
         currentUserId.value !== null &&
-        Number(procurement.requested_by) ===
-            Number(currentUserId.value)
+        Number(procurement.requested_by) === Number(currentUserId.value)
     );
 };
 
-const canDeleteProcurementRow = (
-    procurement: Procurement,
-): boolean => {
+const canDeleteProcurementRow = (procurement: Procurement): boolean => {
     if (!canDeleteProcurement.value) {
         return false;
     }
@@ -433,8 +453,7 @@ const canDeleteProcurementRow = (
 
     return (
         currentUserId.value !== null &&
-        Number(procurement.requested_by) ===
-            Number(currentUserId.value)
+        Number(procurement.requested_by) === Number(currentUserId.value)
     );
 };
 
@@ -458,10 +477,7 @@ const getErrorMessage = (
         return firstError[0] || fallback;
     }
 
-    if (
-        typeof firstError === "string" &&
-        firstError.trim() !== ""
-    ) {
+    if (typeof firstError === "string" && firstError.trim() !== "") {
         return firstError;
     }
 
@@ -474,9 +490,7 @@ const getErrorMessage = (
 |--------------------------------------------------------------------------
 */
 
-const formatDate = (
-    date?: string | null,
-): string => {
+const formatDate = (date?: string | null): string => {
     if (!date) {
         return "-";
     }
@@ -500,9 +514,7 @@ const formatDate = (
 |--------------------------------------------------------------------------
 */
 
-const getFaculty = (
-    procurement: Procurement,
-): Faculty | null => {
+const getFaculty = (procurement: Procurement): Faculty | null => {
     if (procurement.faculty) {
         return procurement.faculty;
     }
@@ -516,16 +528,12 @@ const getFaculty = (
 
     return (
         faculties.value.find(
-            (faculty) =>
-                Number(faculty.id) ===
-                Number(procurement.faculty_id),
+            (faculty) => Number(faculty.id) === Number(procurement.faculty_id),
         ) ?? null
     );
 };
 
-const getFacultyName = (
-    procurement: Procurement,
-): string => {
+const getFacultyName = (procurement: Procurement): string => {
     return getFaculty(procurement)?.name ?? "-";
 };
 
@@ -535,47 +543,32 @@ const getFacultyName = (
 |--------------------------------------------------------------------------
 */
 
-const getRoom = (
-    procurement: Procurement,
-): Room | null => {
+const getRoom = (procurement: Procurement): Room | null => {
     if (procurement.room) {
         return procurement.room;
     }
 
-    if (
-        procurement.room_id === null ||
-        procurement.room_id === undefined
-    ) {
+    if (procurement.room_id === null || procurement.room_id === undefined) {
         return null;
     }
 
     return (
         rooms.value.find(
-            (room) =>
-                Number(room.id) ===
-                Number(procurement.room_id),
+            (room) => Number(room.id) === Number(procurement.room_id),
         ) ?? null
     );
 };
 
-const getRoomName = (
-    procurement: Procurement,
-): string => {
+const getRoomName = (procurement: Procurement): string => {
     const room = getRoom(procurement);
 
     if (!room) {
         return "Tidak ditentukan";
     }
 
-    const code =
-        typeof room.code === "string"
-            ? room.code.trim()
-            : "";
+    const code = typeof room.code === "string" ? room.code.trim() : "";
 
-    const name =
-        typeof room.name === "string"
-            ? room.name.trim()
-            : "";
+    const name = typeof room.name === "string" ? room.name.trim() : "";
 
     if (code && name) {
         return `${code} - ${name}`;
@@ -590,9 +583,7 @@ const getRoomName = (
 |--------------------------------------------------------------------------
 */
 
-const getRequesterName = (
-    procurement: Procurement,
-): string => {
+const getRequesterName = (procurement: Procurement): string => {
     return procurement.requester?.name ?? "Pengguna";
 };
 
@@ -602,9 +593,7 @@ const getRequesterName = (
 |--------------------------------------------------------------------------
 */
 
-const statusLabel = (
-    status: ProcurementStatus,
-): string => {
+const statusLabel = (status: ProcurementStatus): string => {
     switch (status) {
         case "pending":
             return "Menunggu Verifikasi";
@@ -629,9 +618,7 @@ const statusLabel = (
 |--------------------------------------------------------------------------
 */
 
-const typeLabel = (
-    type: ProcurementType,
-): string => {
+const typeLabel = (type: ProcurementType): string => {
     switch (type) {
         case "replacement":
             return "Penggantian";
@@ -650,9 +637,7 @@ const typeLabel = (
 |--------------------------------------------------------------------------
 */
 
-const statusClass = (
-    status: ProcurementStatus,
-): string => {
+const statusClass = (status: ProcurementStatus): string => {
     switch (status) {
         case "pending":
             return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400";
@@ -677,9 +662,7 @@ const statusClass = (
 |--------------------------------------------------------------------------
 */
 
-const typeClass = (
-    type: ProcurementType,
-): string => {
+const typeClass = (type: ProcurementType): string => {
     if (type === "replacement") {
         return "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-400";
     }
@@ -731,29 +714,22 @@ const applyFilters = () => {
 
     isLoading.value = true;
 
-    router.get(
-        "/admin/procurements",
-        buildFilterQuery(),
-        {
-            preserveState: true,
-            preserveScroll: true,
-            replace: true,
+    router.get("/admin/procurements", buildFilterQuery(), {
+        preserveState: true,
+        preserveScroll: true,
+        replace: true,
 
-            onError: (errors) => {
-                showToast(
-                    "error",
-                    getErrorMessage(
-                        errors,
-                        "Gagal memuat data pengadaan.",
-                    ),
-                );
-            },
-
-            onFinish: () => {
-                isLoading.value = false;
-            },
+        onError: (errors) => {
+            showToast(
+                "error",
+                getErrorMessage(errors, "Gagal memuat data pengadaan."),
+            );
         },
-    );
+
+        onFinish: () => {
+            isLoading.value = false;
+        },
+    });
 };
 
 watch(searchQuery, () => {
@@ -785,10 +761,7 @@ const clearFilters = () => {
             onError: (errors) => {
                 showToast(
                     "error",
-                    getErrorMessage(
-                        errors,
-                        "Gagal mereset filter pengadaan.",
-                    ),
+                    getErrorMessage(errors, "Gagal mereset filter pengadaan."),
                 );
             },
 
@@ -814,55 +787,6 @@ const openCreateModal = () => {
     isFormModalOpen.value = true;
 };
 
-/*
-|--------------------------------------------------------------------------
-| Edit
-|--------------------------------------------------------------------------
-*/
-
-const openEditModal = (
-    procurement: Procurement,
-) => {
-    if (!canEditProcurementRow(procurement)) {
-        return;
-    }
-
-    editingProcurement.value = {
-        ...procurement,
-
-        faculty_id: procurement.faculty_id,
-
-        room_id:
-            procurement.room_id !== undefined &&
-            procurement.room_id !== null
-                ? Number(procurement.room_id)
-                : null,
-
-        item_name: procurement.item_name ?? "",
-
-        quantity:
-            procurement.quantity !== undefined &&
-            procurement.quantity !== null
-                ? Number(procurement.quantity)
-                : 1,
-
-        type: procurement.type,
-
-        reason: procurement.reason ?? "",
-
-        subject: procurement.subject ?? "",
-
-        requester_signature:
-            procurement.requester_signature ?? null,
-
-        attachments: procurement.attachments
-            ? [...procurement.attachments]
-            : [],
-    };
-
-    isFormModalOpen.value = true;
-};
-
 const closeFormModal = () => {
     if (isFormProcessing.value) {
         return;
@@ -874,13 +798,55 @@ const closeFormModal = () => {
 
 /*
 |--------------------------------------------------------------------------
+| Edit
+|--------------------------------------------------------------------------
+*/
+
+const openEditModal = (procurement: Procurement) => {
+    if (!canEditProcurementRow(procurement)) {
+        return;
+    }
+
+    editingProcurement.value = {
+        ...procurement,
+
+        faculty_id: procurement.faculty_id,
+
+        room_id:
+            procurement.room_id !== undefined && procurement.room_id !== null
+                ? Number(procurement.room_id)
+                : null,
+
+        item_name: procurement.item_name ?? "",
+
+        quantity:
+            procurement.quantity !== undefined && procurement.quantity !== null
+                ? Number(procurement.quantity)
+                : 1,
+
+        type: procurement.type,
+
+        reason: procurement.reason ?? "",
+
+        subject: procurement.subject ?? null,
+
+        requester_signature: procurement.requester_signature ?? null,
+
+        attachments: procurement.attachments
+            ? [...procurement.attachments]
+            : [],
+    };
+
+    isFormModalOpen.value = true;
+};
+
+/*
+|--------------------------------------------------------------------------
 | Save Procurement
 |--------------------------------------------------------------------------
 */
 
-const handleSaveProcurement = (
-    data: ProcurementFormData,
-) => {
+const handleSaveProcurement = (data: ProcurementFormData) => {
     if (isFormProcessing.value) {
         return;
     }
@@ -895,33 +861,29 @@ const handleSaveProcurement = (
 
         isFormProcessing.value = true;
 
-        router.post(
-            "/admin/procurements",
-            data,
-            {
-                preserveScroll: true,
-                forceFormData: true,
+        router.post("/admin/procurements", data, {
+            preserveScroll: true,
+            forceFormData: true,
 
-                onSuccess: () => {
-                    isFormModalOpen.value = false;
-                    editingProcurement.value = null;
-                },
-
-                onError: (errors) => {
-                    showToast(
-                        "error",
-                        getErrorMessage(
-                            errors,
-                            "Gagal membuat pengajuan pengadaan.",
-                        ),
-                    );
-                },
-
-                onFinish: () => {
-                    isFormProcessing.value = false;
-                },
+            onSuccess: () => {
+                isFormModalOpen.value = false;
+                editingProcurement.value = null;
             },
-        );
+
+            onError: (errors) => {
+                showToast(
+                    "error",
+                    getErrorMessage(
+                        errors,
+                        "Gagal membuat pengajuan pengadaan.",
+                    ),
+                );
+            },
+
+            onFinish: () => {
+                isFormProcessing.value = false;
+            },
+        });
 
         return;
     }
@@ -929,8 +891,7 @@ const handleSaveProcurement = (
     /*
      * UPDATE
      */
-    const procurement =
-        editingProcurement.value;
+    const procurement = editingProcurement.value;
 
     if (!canEditProcurementRow(procurement)) {
         return;
@@ -938,14 +899,12 @@ const handleSaveProcurement = (
 
     isFormProcessing.value = true;
 
-    const payload = {
-        ...data,
-        _method: "PUT",
-    };
-
     router.post(
         `/admin/procurements/${procurement.id}`,
-        payload,
+        {
+            ...data,
+            _method: "PUT",
+        },
         {
             preserveScroll: true,
             forceFormData: true,
@@ -978,14 +937,10 @@ const handleSaveProcurement = (
 |--------------------------------------------------------------------------
 */
 
-const openDetailModal = (
-    procurement: Procurement,
-) => {
-    const room = getRoom(procurement);
-
+const openDetailModal = (procurement: Procurement) => {
     selectedProcurement.value = {
         ...procurement,
-        room,
+        room: getRoom(procurement),
     };
 
     isDetailModalOpen.value = true;
@@ -1002,9 +957,7 @@ const closeDetailModal = () => {
 |--------------------------------------------------------------------------
 */
 
-const openApprovalModal = (
-    procurement: Procurement,
-) => {
+const openApprovalModal = (procurement: Procurement) => {
     if (!isSuperAdmin.value) {
         return;
     }
@@ -1014,6 +967,7 @@ const openApprovalModal = (
     }
 
     approvalProcurement.value = procurement;
+
     isApprovalModalOpen.value = true;
 };
 
@@ -1031,7 +985,13 @@ const handleApproval = (data: {
     approver_signature: string | null;
     admin_note: string | null;
 }) => {
-    if (!approvalProcurement.value) {
+    if (isApprovalProcessing.value) {
+        return;
+    }
+
+    const procurement = approvalProcurement.value;
+
+    if (!procurement) {
         return;
     }
 
@@ -1039,28 +999,14 @@ const handleApproval = (data: {
         return;
     }
 
-    if (
-        approvalProcurement.value.status !==
-        "pending"
-    ) {
-        return;
-    }
-
-    if (isApprovalProcessing.value) {
+    if (procurement.status !== "pending") {
+        showToast("warning", "Pengajuan ini sudah tidak menunggu verifikasi.");
         return;
     }
 
     isApprovalProcessing.value = true;
 
-    const procurementId =
-        approvalProcurement.value.id;
-
-    const payload = {
-        approver_signature:
-            data.approver_signature,
-
-        admin_note: data.admin_note,
-    };
+    const procurementId = procurement.id;
 
     const endpoint =
         data.action === "approve"
@@ -1074,7 +1020,10 @@ const handleApproval = (data: {
 
     router.post(
         endpoint,
-        payload,
+        {
+            approver_signature: data.approver_signature,
+            admin_note: data.admin_note,
+        },
         {
             preserveScroll: true,
             forceFormData: true,
@@ -1085,13 +1034,7 @@ const handleApproval = (data: {
             },
 
             onError: (errors) => {
-                showToast(
-                    "error",
-                    getErrorMessage(
-                        errors,
-                        fallbackMessage,
-                    ),
-                );
+                showToast("error", getErrorMessage(errors, fallbackMessage));
             },
 
             onFinish: () => {
@@ -1103,13 +1046,17 @@ const handleApproval = (data: {
 
 /*
 |--------------------------------------------------------------------------
-| Complete
+| Complete Confirmation
 |--------------------------------------------------------------------------
 */
 
-const openCompleteModal = (
-    procurement: Procurement,
-) => {
+const resetConfirmState = () => {
+    confirmTitle.value = "Konfirmasi";
+    confirmMessage.value = "";
+    confirmAction.value = null;
+};
+
+const openCompleteModal = (procurement: Procurement) => {
     if (!canCompleteProcurement.value) {
         return;
     }
@@ -1118,29 +1065,58 @@ const openCompleteModal = (
         return;
     }
 
-    confirmTitle.value =
-        "Tandai Pengadaan Selesai?";
+    if (isConfirmProcessing.value || isDeleteProcessing.value) {
+        return;
+    }
+
+    resetConfirmState();
+
+    confirmTitle.value = "Tandai Pengadaan Selesai?";
 
     confirmMessage.value =
         `Pengajuan "${procurement.item_name}" akan diubah menjadi status selesai. ` +
         "Pastikan proses pengadaan sudah benar-benar selesai.";
+
+    const procurementId = procurement.id;
 
     confirmAction.value = () => {
         if (isConfirmProcessing.value) {
             return;
         }
 
+        if (!canCompleteProcurement.value) {
+            return;
+        }
+
+        /*
+         * Re-check state sebelum request.
+         * Object di tabel bisa saja sudah berubah
+         * akibat visit Inertia sebelumnya.
+         */
+        const currentProcurement = procurements.value.find(
+            (item) => item.id === procurementId,
+        );
+
+        if (currentProcurement && currentProcurement.status !== "approved") {
+            showToast(
+                "warning",
+                "Pengajuan ini sudah tidak berstatus disetujui.",
+            );
+
+            closeConfirmModal();
+            return;
+        }
+
         isConfirmProcessing.value = true;
 
         router.post(
-            `/admin/procurements/${procurement.id}/complete`,
+            `/admin/procurements/${procurementId}/complete`,
             {},
             {
                 preserveScroll: true,
 
                 onSuccess: () => {
-                    isConfirmModalOpen.value = false;
-                    confirmAction.value = null;
+                    closeConfirmModal();
                 },
 
                 onError: (errors) => {
@@ -1169,14 +1145,11 @@ const closeConfirmModal = () => {
     }
 
     isConfirmModalOpen.value = false;
-    confirmAction.value = null;
+    resetConfirmState();
 };
 
 const executeConfirm = () => {
-    if (
-        !confirmAction.value ||
-        isConfirmProcessing.value
-    ) {
+    if (isConfirmProcessing.value || !confirmAction.value) {
         return;
     }
 
@@ -1185,18 +1158,27 @@ const executeConfirm = () => {
 
 /*
 |--------------------------------------------------------------------------
-| Delete
+| Delete Confirmation
 |--------------------------------------------------------------------------
 */
 
-const openDeleteModal = (
-    procurement: Procurement,
-) => {
+const openDeleteModal = (procurement: Procurement) => {
     if (!canDeleteProcurementRow(procurement)) {
         return;
     }
 
+    if (isDeleteProcessing.value || isConfirmProcessing.value) {
+        return;
+    }
+
     deleteTarget.value = procurement;
+
+    deleteTitle.value = "Hapus Pengajuan Pengadaan?";
+
+    deleteMessage.value =
+        `Pengajuan "${procurement.item_name}" akan dihapus secara permanen. ` +
+        "Data yang sudah dihapus tidak dapat dikembalikan.";
+
     isDeleteModalOpen.value = true;
 };
 
@@ -1207,51 +1189,55 @@ const closeDeleteModal = () => {
 
     isDeleteModalOpen.value = false;
     deleteTarget.value = null;
+
+    deleteTitle.value = "Hapus Pengajuan?";
+    deleteMessage.value = "";
 };
 
 const executeDelete = () => {
-    if (
-        !deleteTarget.value ||
-        isDeleteProcessing.value
-    ) {
+    if (isDeleteProcessing.value || !deleteTarget.value) {
         return;
     }
 
-    const procurement =
-        deleteTarget.value;
+    const procurement = deleteTarget.value;
 
+    /*
+     * Re-check authorization dan status
+     * tepat sebelum request.
+     */
     if (!canDeleteProcurementRow(procurement)) {
+        showToast(
+            "warning",
+            "Pengajuan ini sudah tidak dapat dihapus.",
+        );
+
         closeDeleteModal();
         return;
     }
 
     isDeleteProcessing.value = true;
 
-    router.delete(
-        `/admin/procurements/${procurement.id}`,
-        {
-            preserveScroll: true,
+    router.delete(`/admin/procurements/${procurement.id}`, {
+        preserveScroll: true,
 
-            onSuccess: () => {
-                isDeleteModalOpen.value = false;
-                deleteTarget.value = null;
-            },
-
-            onError: (errors) => {
-                showToast(
-                    "error",
-                    getErrorMessage(
-                        errors,
-                        "Gagal menghapus pengajuan pengadaan.",
-                    ),
-                );
-            },
-
-            onFinish: () => {
-                isDeleteProcessing.value = false;
-            },
+        onSuccess: () => {
+            closeDeleteModal();
         },
-    );
+
+        onError: (errors) => {
+            showToast(
+                "error",
+                getErrorMessage(
+                    errors,
+                    "Gagal menghapus pengajuan pengadaan.",
+                ),
+            );
+        },
+
+        onFinish: () => {
+            isDeleteProcessing.value = false;
+        },
+    });
 };
 
 /*
@@ -1260,9 +1246,7 @@ const executeDelete = () => {
 |--------------------------------------------------------------------------
 */
 
-const printProcurement = (
-    procurement: Procurement,
-) => {
+const printProcurement = (procurement: Procurement) => {
     if (!procurement?.id) {
         return;
     }
@@ -1271,6 +1255,10 @@ const printProcurement = (
         procurement.status !== "approved" &&
         procurement.status !== "completed"
     ) {
+        return;
+    }
+
+    if (typeof window === "undefined") {
         return;
     }
 
@@ -1294,20 +1282,12 @@ const printProcurement = (
 |--------------------------------------------------------------------------
 */
 
-const goToPage = (
-    page: number,
-) => {
-    const currentPage =
-        props.procurements?.current_page ?? 1;
+const goToPage = (page: number) => {
+    const currentPage = props.procurements?.current_page ?? 1;
 
-    const lastPage =
-        props.procurements?.last_page ?? 1;
+    const lastPage = props.procurements?.last_page ?? 1;
 
-    if (
-        page < 1 ||
-        page > lastPage ||
-        page === currentPage
-    ) {
+    if (page < 1 || page > lastPage || page === currentPage) {
         return;
     }
 
@@ -1329,10 +1309,7 @@ const goToPage = (
             onError: (errors) => {
                 showToast(
                     "error",
-                    getErrorMessage(
-                        errors,
-                        "Gagal memuat halaman pengadaan.",
-                    ),
+                    getErrorMessage(errors, "Gagal memuat halaman pengadaan."),
                 );
             },
 
@@ -1344,33 +1321,75 @@ const goToPage = (
 };
 
 const visiblePages = computed(() => {
-    const current =
-        props.procurements?.current_page ?? 1;
+    const current = props.procurements?.current_page ?? 1;
 
-    const last =
-        props.procurements?.last_page ?? 1;
+    const last = props.procurements?.last_page ?? 1;
 
     const pages: number[] = [];
 
-    const start = Math.max(
-        1,
-        current - 2,
-    );
+    const start = Math.max(1, current - 2);
 
-    const end = Math.min(
-        last,
-        current + 2,
-    );
+    const end = Math.min(last, current + 2);
 
-    for (
-        let page = start;
-        page <= end;
-        page++
-    ) {
+    for (let page = start; page <= end; page++) {
         pages.push(page);
     }
 
     return pages;
+});
+
+/*
+|--------------------------------------------------------------------------
+| Keyboard
+|--------------------------------------------------------------------------
+*/
+
+const handleGlobalKeydown = (event: KeyboardEvent) => {
+    if (event.key !== "Escape") {
+        return;
+    }
+
+    if (isConfirmModalOpen.value) {
+        if (!isConfirmProcessing.value) {
+            closeConfirmModal();
+        }
+
+        return;
+    }
+
+    if (isDeleteModalOpen.value) {
+        if (!isDeleteProcessing.value) {
+            closeDeleteModal();
+        }
+
+        return;
+    }
+};
+
+/*
+|--------------------------------------------------------------------------
+| Modal Lifecycle
+|--------------------------------------------------------------------------
+*/
+
+watch([isConfirmModalOpen, isDeleteModalOpen], ([confirmOpen, deleteOpen]) => {
+    if (typeof window === "undefined") {
+        return;
+    }
+
+    const shouldLock = confirmOpen || deleteOpen;
+
+    if (shouldLock) {
+        lockBodyScroll();
+
+        window.addEventListener("keydown", handleGlobalKeydown);
+
+        return;
+    }
+
+    window.removeEventListener("keydown", handleGlobalKeydown);
+
+    restoreBodyScroll();
 });
 
 /*
@@ -1381,27 +1400,31 @@ const visiblePages = computed(() => {
 
 onBeforeUnmount(() => {
     clearSearchTimeout();
+    clearToastTimeout();
 
-    if (toastTimeout !== undefined) {
-        clearTimeout(toastTimeout);
-        toastTimeout = undefined;
+    if (typeof window !== "undefined") {
+        window.removeEventListener("keydown", handleGlobalKeydown);
     }
+
+    restoreBodyScroll();
+
+    isConfirmProcessing.value = false;
+    isDeleteProcessing.value = false;
+
+    confirmAction.value = null;
+    deleteTarget.value = null;
 });
 </script>
 
 <template>
     <Head title="Pengadaan Barang - Sistem Inventory" />
 
-    <div
-        class="relative flex flex-1 flex-col gap-6 overflow-hidden p-4 md:p-6"
-    >
+    <div class="relative flex flex-1 flex-col gap-6 overflow-hidden p-4 md:p-6">
         <!-- ============================================================ -->
         <!-- BACKGROUND -->
         <!-- ============================================================ -->
 
-        <div
-            class="pointer-events-none absolute inset-0 overflow-hidden"
-        >
+        <div class="pointer-events-none absolute inset-0 overflow-hidden">
             <div
                 class="animate-blob absolute -left-24 -top-24 h-72 w-72 rounded-full bg-[#f53003]/10 blur-3xl dark:bg-[#FF4433]/10 sm:h-96 sm:w-96"
             ></div>
@@ -1426,16 +1449,12 @@ onBeforeUnmount(() => {
             <!-- STATS -->
             <!-- ======================================================== -->
 
-            <div
-                class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5"
-            >
+            <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                 <!-- Total -->
                 <div
                     class="group relative overflow-hidden rounded-xl border border-black/5 bg-white p-5 shadow-sm transition hover:shadow-md dark:border-white/10 dark:bg-[#161615]"
                 >
-                    <div
-                        class="flex items-center justify-between"
-                    >
+                    <div class="flex items-center justify-between">
                         <span
                             class="text-xs font-semibold uppercase tracking-wider text-[#706f6c] dark:text-[#A1A09A]"
                         >
@@ -1485,9 +1504,7 @@ onBeforeUnmount(() => {
                 <div
                     class="group relative overflow-hidden rounded-xl border border-black/5 bg-white p-5 shadow-sm transition hover:shadow-md dark:border-white/10 dark:bg-[#161615]"
                 >
-                    <div
-                        class="flex items-center justify-between"
-                    >
+                    <div class="flex items-center justify-between">
                         <span
                             class="text-xs font-semibold uppercase tracking-wider text-[#706f6c] dark:text-[#A1A09A]"
                         >
@@ -1533,9 +1550,7 @@ onBeforeUnmount(() => {
                 <div
                     class="group relative overflow-hidden rounded-xl border border-black/5 bg-white p-5 shadow-sm transition hover:shadow-md dark:border-white/10 dark:bg-[#161615]"
                 >
-                    <div
-                        class="flex items-center justify-between"
-                    >
+                    <div class="flex items-center justify-between">
                         <span
                             class="text-xs font-semibold uppercase tracking-wider text-[#706f6c] dark:text-[#A1A09A]"
                         >
@@ -1581,9 +1596,7 @@ onBeforeUnmount(() => {
                 <div
                     class="group relative overflow-hidden rounded-xl border border-black/5 bg-white p-5 shadow-sm transition hover:shadow-md dark:border-white/10 dark:bg-[#161615]"
                 >
-                    <div
-                        class="flex items-center justify-between"
-                    >
+                    <div class="flex items-center justify-between">
                         <span
                             class="text-xs font-semibold uppercase tracking-wider text-[#706f6c] dark:text-[#A1A09A]"
                         >
@@ -1629,9 +1642,7 @@ onBeforeUnmount(() => {
                 <div
                     class="group relative overflow-hidden rounded-xl border border-black/5 bg-white p-5 shadow-sm transition hover:shadow-md dark:border-white/10 dark:bg-[#161615]"
                 >
-                    <div
-                        class="flex items-center justify-between"
-                    >
+                    <div class="flex items-center justify-between">
                         <span
                             class="text-xs font-semibold uppercase tracking-wider text-[#706f6c] dark:text-[#A1A09A]"
                         >
@@ -1692,11 +1703,9 @@ onBeforeUnmount(() => {
                             Pengajuan Pengadaan Barang
                         </h2>
 
-                        <p
-                            class="text-xs text-[#706f6c] dark:text-[#A1A09A]"
-                        >
-                            Kelola pengajuan penggantian barang rusak
-                            dan pengadaan barang baru.
+                        <p class="text-xs text-[#706f6c] dark:text-[#A1A09A]">
+                            Kelola pengajuan penggantian barang rusak dan
+                            pengadaan barang baru.
                         </p>
                     </div>
 
@@ -1730,9 +1739,7 @@ onBeforeUnmount(() => {
                 <!-- ==================================================== -->
 
                 <div class="mb-6">
-                    <div
-                        class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
-                    >
+                    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         <!-- Search -->
                         <div class="relative">
                             <input
@@ -1765,25 +1772,11 @@ onBeforeUnmount(() => {
                             @change="applyFilters"
                             class="w-full rounded-lg border border-[#e3e3e0] bg-white px-3 py-2.5 text-xs text-[#1b1b18] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#EDEDEC]"
                         >
-                            <option value="">
-                                Semua Status
-                            </option>
-
-                            <option value="pending">
-                                Menunggu Verifikasi
-                            </option>
-
-                            <option value="approved">
-                                Disetujui
-                            </option>
-
-                            <option value="rejected">
-                                Ditolak
-                            </option>
-
-                            <option value="completed">
-                                Selesai
-                            </option>
+                            <option value="">Semua Status</option>
+                            <option value="pending">Menunggu Verifikasi</option>
+                            <option value="approved">Disetujui</option>
+                            <option value="rejected">Ditolak</option>
+                            <option value="completed">Selesai</option>
                         </select>
 
                         <!-- Type -->
@@ -1792,17 +1785,11 @@ onBeforeUnmount(() => {
                             @change="applyFilters"
                             class="w-full rounded-lg border border-[#e3e3e0] bg-white px-3 py-2.5 text-xs text-[#1b1b18] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#EDEDEC]"
                         >
-                            <option value="">
-                                Semua Jenis
-                            </option>
-
+                            <option value="">Semua Jenis</option>
                             <option value="replacement">
                                 Penggantian Barang
                             </option>
-
-                            <option value="new_item">
-                                Barang Baru
-                            </option>
+                            <option value="new_item">Barang Baru</option>
                         </select>
 
                         <!-- Faculty -->
@@ -1811,28 +1798,21 @@ onBeforeUnmount(() => {
                             @change="applyFilters"
                             class="w-full rounded-lg border border-[#e3e3e0] bg-white px-3 py-2.5 text-xs text-[#1b1b18] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#EDEDEC]"
                         >
-                            <option value="">
-                                Semua Fakultas
-                            </option>
+                            <option value="">Semua Fakultas</option>
 
                             <option
                                 v-for="faculty in faculties"
                                 :key="faculty.id"
                                 :value="String(faculty.id)"
                             >
-                                {{ faculty.code }} -
-                                {{ faculty.name }}
+                                {{ faculty.code }} - {{ faculty.name }}
                             </option>
                         </select>
                     </div>
 
                     <!-- Filter Summary -->
-                    <div
-                        class="mt-3 flex items-center justify-between"
-                    >
-                        <p
-                            class="text-xs text-[#706f6c] dark:text-[#A1A09A]"
-                        >
+                    <div class="mt-3 flex items-center justify-between">
+                        <p class="text-xs text-[#706f6c] dark:text-[#A1A09A]">
                             Menampilkan
                             <span
                                 class="font-semibold text-[#1b1b18] dark:text-[#EDEDEC]"
@@ -1863,25 +1843,18 @@ onBeforeUnmount(() => {
 
                 <div class="flex-1">
                     <!-- Loading -->
-                    <div
-                        v-if="isLoading"
-                        class="space-y-3"
-                    >
+                    <div v-if="isLoading" class="space-y-3">
                         <div
                             v-for="i in 5"
                             :key="i"
                             class="animate-pulse rounded-xl border border-[#e3e3e0] bg-[#FDFDFC] p-4 dark:border-[#3E3E3A] dark:bg-[#0a0a0a]"
                         >
-                            <div
-                                class="flex items-center gap-4"
-                            >
+                            <div class="flex items-center gap-4">
                                 <div
                                     class="h-10 w-10 rounded-lg bg-slate-200 dark:bg-zinc-800"
                                 ></div>
 
-                                <div
-                                    class="flex-1 space-y-2"
-                                >
+                                <div class="flex-1 space-y-2">
                                     <div
                                         class="h-3 w-48 rounded bg-slate-200 dark:bg-zinc-800"
                                     ></div>
@@ -1900,17 +1873,11 @@ onBeforeUnmount(() => {
 
                     <!-- Table -->
                     <div
-                        v-else-if="
-                            procurements.length > 0
-                        "
+                        v-else-if="procurements.length > 0"
                         class="overflow-x-auto rounded-xl border border-[#e3e3e0] dark:border-[#3E3E3A]"
                     >
-                        <table
-                            class="w-full min-w-[1050px] text-left text-xs"
-                        >
-                            <thead
-                                class="bg-[#fafafa] dark:bg-[#111110]"
-                            >
+                        <table class="w-full min-w-[1050px] text-left text-xs">
+                            <thead class="bg-[#fafafa] dark:bg-[#111110]">
                                 <tr
                                     class="border-b border-[#e3e3e0] text-[#706f6c] dark:border-[#3E3E3A] dark:text-[#A1A09A]"
                                 >
@@ -1919,43 +1886,36 @@ onBeforeUnmount(() => {
                                     >
                                         Pengajuan
                                     </th>
-
                                     <th
                                         class="px-4 py-3 font-medium uppercase tracking-wider"
                                     >
                                         Fakultas
                                     </th>
-
                                     <th
                                         class="px-4 py-3 font-medium uppercase tracking-wider"
                                     >
                                         Ruangan
                                     </th>
-
                                     <th
                                         class="px-4 py-3 text-center font-medium uppercase tracking-wider"
                                     >
                                         Jumlah
                                     </th>
-
                                     <th
                                         class="px-4 py-3 font-medium uppercase tracking-wider"
                                     >
                                         Jenis
                                     </th>
-
                                     <th
                                         class="px-4 py-3 font-medium uppercase tracking-wider"
                                     >
                                         Status
                                     </th>
-
                                     <th
                                         class="px-4 py-3 font-medium uppercase tracking-wider"
                                     >
                                         Pemohon
                                     </th>
-
                                     <th
                                         class="px-4 py-3 text-right font-medium uppercase tracking-wider"
                                     >
@@ -1973,12 +1933,8 @@ onBeforeUnmount(() => {
                                     class="bg-white transition hover:bg-slate-50/70 dark:bg-[#161615] dark:hover:bg-[#20201e]"
                                 >
                                     <!-- Pengajuan -->
-                                    <td
-                                        class="px-4 py-4"
-                                    >
-                                        <div
-                                            class="flex items-start gap-3"
-                                        >
+                                    <td class="px-4 py-4">
+                                        <div class="flex items-start gap-3">
                                             <div
                                                 class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#fff2f2] text-[#f53003] dark:bg-[#1D0002] dark:text-[#FF4433]"
                                             >
@@ -1995,7 +1951,6 @@ onBeforeUnmount(() => {
                                                         stroke-linejoin="round"
                                                         d="M20.25 7.5v9a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 16.5v-9A2.25 2.25 0 0 1 6 5.25h12a2.25 2.25 0 0 1 2.25 2.25Z"
                                                     />
-
                                                     <path
                                                         stroke-linecap="round"
                                                         stroke-linejoin="round"
@@ -2004,15 +1959,11 @@ onBeforeUnmount(() => {
                                                 </svg>
                                             </div>
 
-                                            <div
-                                                class="min-w-0"
-                                            >
+                                            <div class="min-w-0">
                                                 <div
                                                     class="max-w-[230px] truncate font-semibold text-[#1b1b18] dark:text-[#EDEDEC]"
                                                 >
-                                                    {{
-                                                        procurement.item_name
-                                                    }}
+                                                    {{ procurement.item_name }}
                                                 </div>
 
                                                 <div
@@ -2029,77 +1980,49 @@ onBeforeUnmount(() => {
                                     </td>
 
                                     <!-- Faculty -->
-                                    <td
-                                        class="px-4 py-4"
-                                    >
+                                    <td class="px-4 py-4">
                                         <div
                                             class="max-w-[180px] truncate font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
                                         >
-                                            {{
-                                                getFacultyName(
-                                                    procurement,
-                                                )
-                                            }}
+                                            {{ getFacultyName(procurement) }}
                                         </div>
                                     </td>
 
                                     <!-- Room -->
-                                    <td
-                                        class="px-4 py-4"
-                                    >
+                                    <td class="px-4 py-4">
                                         <div
                                             class="max-w-[180px] truncate text-[#706f6c] dark:text-[#A1A09A]"
                                         >
-                                            {{
-                                                getRoomName(
-                                                    procurement,
-                                                )
-                                            }}
+                                            {{ getRoomName(procurement) }}
                                         </div>
 
-                                        <template
-                                            v-if="
-                                                getRoom(
-                                                    procurement,
-                                                )
-                                            "
-                                        >
+                                        <template v-if="getRoom(procurement)">
                                             <div
                                                 v-if="
-                                                    getRoom(
-                                                        procurement,
-                                                    )
+                                                    getRoom(procurement)
                                                         ?.building ||
-                                                    getRoom(
-                                                        procurement,
-                                                    )?.floor
+                                                    getRoom(procurement)?.floor
                                                 "
                                                 class="mt-1 text-[10px] text-[#A1A09A]"
                                             >
                                                 <span
                                                     v-if="
-                                                        getRoom(
-                                                            procurement,
-                                                        )
+                                                        getRoom(procurement)
                                                             ?.building
                                                     "
                                                 >
                                                     {{
-                                                        getRoom(
-                                                            procurement,
-                                                        )?.building
+                                                        getRoom(procurement)
+                                                            ?.building
                                                     }}
                                                 </span>
 
                                                 <span
                                                     v-if="
-                                                        getRoom(
-                                                            procurement,
-                                                        )
+                                                        getRoom(procurement)
                                                             ?.building &&
-                                                        getRoom(
-                                                            procurement,
-                                                        )?.floor
+                                                        getRoom(procurement)
+                                                            ?.floor
                                                     "
                                                 >
                                                     &middot;
@@ -2107,16 +2030,14 @@ onBeforeUnmount(() => {
 
                                                 <span
                                                     v-if="
-                                                        getRoom(
-                                                            procurement,
-                                                        )?.floor
+                                                        getRoom(procurement)
+                                                            ?.floor
                                                     "
                                                 >
                                                     Lt.
                                                     {{
-                                                        getRoom(
-                                                            procurement,
-                                                        )?.floor
+                                                        getRoom(procurement)
+                                                            ?.floor
                                                     }}
                                                 </span>
                                             </div>
@@ -2124,77 +2045,49 @@ onBeforeUnmount(() => {
                                     </td>
 
                                     <!-- Quantity -->
-                                    <td
-                                        class="px-4 py-4 text-center"
-                                    >
+                                    <td class="px-4 py-4 text-center">
                                         <span
                                             class="font-semibold text-[#1b1b18] dark:text-[#EDEDEC]"
                                         >
-                                            {{
-                                                procurement.quantity
-                                            }}
+                                            {{ procurement.quantity }}
                                         </span>
                                     </td>
 
                                     <!-- Type -->
-                                    <td
-                                        class="px-4 py-4"
-                                    >
+                                    <td class="px-4 py-4">
                                         <span
                                             class="inline-flex rounded-md border px-2 py-1 text-[10px] font-semibold"
-                                            :class="
-                                                typeClass(
-                                                    procurement.type,
-                                                )
-                                            "
+                                            :class="typeClass(procurement.type)"
                                         >
-                                            {{
-                                                typeLabel(
-                                                    procurement.type,
-                                                )
-                                            }}
+                                            {{ typeLabel(procurement.type) }}
                                         </span>
                                     </td>
 
                                     <!-- Status -->
-                                    <td
-                                        class="px-4 py-4"
-                                    >
+                                    <td class="px-4 py-4">
                                         <span
                                             class="inline-flex whitespace-nowrap rounded-md border px-2 py-1 text-[10px] font-semibold"
                                             :class="
-                                                statusClass(
-                                                    procurement.status,
-                                                )
+                                                statusClass(procurement.status)
                                             "
                                         >
                                             {{
-                                                statusLabel(
-                                                    procurement.status,
-                                                )
+                                                statusLabel(procurement.status)
                                             }}
                                         </span>
                                     </td>
 
                                     <!-- Requester -->
-                                    <td
-                                        class="px-4 py-4"
-                                    >
+                                    <td class="px-4 py-4">
                                         <div
                                             class="max-w-[130px] truncate font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
                                         >
-                                            {{
-                                                getRequesterName(
-                                                    procurement,
-                                                )
-                                            }}
+                                            {{ getRequesterName(procurement) }}
                                         </div>
                                     </td>
 
                                     <!-- Actions -->
-                                    <td
-                                        class="px-4 py-4"
-                                    >
+                                    <td class="px-4 py-4">
                                         <div
                                             class="flex items-center justify-end gap-1.5"
                                         >
@@ -2202,9 +2095,7 @@ onBeforeUnmount(() => {
                                             <button
                                                 type="button"
                                                 @click="
-                                                    openDetailModal(
-                                                        procurement,
-                                                    )
+                                                    openDetailModal(procurement)
                                                 "
                                                 class="rounded-lg border border-[#e3e3e0] bg-white p-1.5 text-[#706f6c] transition hover:border-[#1b1b18] hover:text-[#1b1b18] dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#A1A09A] dark:hover:border-[#EDEDEC] dark:hover:text-[#EDEDEC]"
                                                 title="Lihat Detail"
@@ -2223,7 +2114,6 @@ onBeforeUnmount(() => {
                                                         stroke-linejoin="round"
                                                         d="M2.036 12.322a1.012 1.012 0 0 1 0-.644C3.423 7.51 7.36 4.5 12 4.5c4.64 0 8.577 3.01 9.964 7.178.07.21.07.434 0 .644C20.577 16.49 16.64 19.5 12 19.5c-4.64 0-8.577-3.01-9.964-7.178Z"
                                                     />
-
                                                     <path
                                                         stroke-linecap="round"
                                                         stroke-linejoin="round"
@@ -2275,9 +2165,7 @@ onBeforeUnmount(() => {
                                                 "
                                                 type="button"
                                                 @click="
-                                                    openEditModal(
-                                                        procurement,
-                                                    )
+                                                    openEditModal(procurement)
                                                 "
                                                 class="rounded-lg border border-[#e3e3e0] bg-white p-1.5 text-[#706f6c] transition hover:border-[#f53003] hover:text-[#f53003] dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#A1A09A] dark:hover:border-[#FF4433] dark:hover:text-[#FF4433]"
                                                 title="Edit Pengajuan"
@@ -2308,13 +2196,9 @@ onBeforeUnmount(() => {
                                                 "
                                                 type="button"
                                                 @click="
-                                                    openDeleteModal(
-                                                        procurement,
-                                                    )
+                                                    openDeleteModal(procurement)
                                                 "
-                                                :disabled="
-                                                    isDeleteProcessing
-                                                "
+                                                :disabled="isDeleteProcessing"
                                                 class="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400 dark:hover:border-red-800 dark:hover:bg-red-950/50"
                                                 title="Hapus Pengajuan"
                                                 aria-label="Hapus Pengajuan"
@@ -2381,9 +2265,7 @@ onBeforeUnmount(() => {
                                                         procurement,
                                                     )
                                                 "
-                                                :disabled="
-                                                    isConfirmProcessing
-                                                "
+                                                :disabled="isConfirmProcessing"
                                                 class="rounded-lg border border-emerald-200 bg-emerald-50 p-1.5 text-emerald-600 transition hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-400 dark:hover:border-emerald-800 dark:hover:bg-emerald-950/50"
                                                 title="Tandai Selesai"
                                                 aria-label="Tandai Selesai"
@@ -2431,7 +2313,6 @@ onBeforeUnmount(() => {
                                     stroke-linejoin="round"
                                     d="M20.25 7.5v9a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25v-9A2.25 2.25 0 0 1 6 5.25h12a2.25 2.25 0 0 1 2.25 2.25Z"
                                 />
-
                                 <path
                                     stroke-linecap="round"
                                     stroke-linejoin="round"
@@ -2473,56 +2354,41 @@ onBeforeUnmount(() => {
 
                 <div
                     v-if="
-                        !isLoading &&
-                        (props.procurements?.last_page ?? 1) > 1
+                        !isLoading && (props.procurements?.last_page ?? 1) > 1
                     "
                     class="mt-6 flex flex-col gap-3 border-t border-[#e3e3e0] pt-4 sm:flex-row sm:items-center sm:justify-between dark:border-[#3E3E3A]"
                 >
-                    <p
-                        class="text-xs text-[#706f6c] dark:text-[#A1A09A]"
-                    >
+                    <p class="text-xs text-[#706f6c] dark:text-[#A1A09A]">
                         Menampilkan
                         <span
                             class="font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
                         >
-                            {{
-                                props.procurements?.from ?? 0
-                            }}
+                            {{ props.procurements?.from ?? 0 }}
                         </span>
                         -
                         <span
                             class="font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
                         >
-                            {{
-                                props.procurements?.to ?? 0
-                            }}
+                            {{ props.procurements?.to ?? 0 }}
                         </span>
                         dari
                         <span
                             class="font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
                         >
-                            {{
-                                props.procurements?.total ?? 0
-                            }}
+                            {{ props.procurements?.total ?? 0 }}
                         </span>
                         pengajuan
                     </p>
 
-                    <div
-                        class="flex items-center gap-1"
-                    >
+                    <div class="flex items-center gap-1">
                         <button
                             type="button"
                             :disabled="
-                                props.procurements
-                                    .current_page <= 1 ||
+                                props.procurements.current_page <= 1 ||
                                 isLoading
                             "
                             @click="
-                                goToPage(
-                                    props.procurements
-                                        .current_page - 1,
-                                )
+                                goToPage(props.procurements.current_page - 1)
                             "
                             class="rounded-lg border border-[#e3e3e0] bg-white px-2.5 py-1.5 text-xs text-[#706f6c] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#A1A09A] dark:hover:bg-[#20201e]"
                             aria-label="Halaman sebelumnya"
@@ -2538,8 +2404,7 @@ onBeforeUnmount(() => {
                             @click="goToPage(page)"
                             class="min-w-[32px] rounded-lg border px-2.5 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50"
                             :class="
-                                page ===
-                                props.procurements.current_page
+                                page === props.procurements.current_page
                                     ? 'border-[#f53003] bg-[#f53003] text-white dark:border-[#FF4433] dark:bg-[#FF4433]'
                                     : 'border-[#e3e3e0] bg-white text-[#706f6c] hover:bg-slate-50 dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#A1A09A] dark:hover:bg-[#20201e]'
                             "
@@ -2550,17 +2415,11 @@ onBeforeUnmount(() => {
                         <button
                             type="button"
                             :disabled="
-                                props.procurements
-                                    .current_page >=
-                                    props.procurements
-                                        .last_page ||
-                                isLoading
+                                props.procurements.current_page >=
+                                    props.procurements.last_page || isLoading
                             "
                             @click="
-                                goToPage(
-                                    props.procurements
-                                        .current_page + 1,
-                                )
+                                goToPage(props.procurements.current_page + 1)
                             "
                             class="rounded-lg border border-[#e3e3e0] bg-white px-2.5 py-1.5 text-xs text-[#706f6c] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#A1A09A] dark:hover:bg-[#20201e]"
                             aria-label="Halaman berikutnya"
@@ -2634,7 +2493,7 @@ onBeforeUnmount(() => {
                 <!-- Backdrop -->
                 <div
                     class="absolute inset-0 bg-black/50 backdrop-blur-sm dark:bg-black/70"
-                    @click="closeConfirmModal"
+                    @click.self="closeConfirmModal"
                 ></div>
 
                 <Transition
@@ -2649,7 +2508,9 @@ onBeforeUnmount(() => {
                     <div
                         v-if="isConfirmModalOpen"
                         class="relative w-full max-w-md overflow-hidden rounded-2xl border border-[#e3e3e0] bg-white shadow-2xl dark:border-[#3E3E3A] dark:bg-[#161615]"
+                        @click.stop
                     >
+                        <!-- Content -->
                         <div class="p-6">
                             <!-- Icon -->
                             <div
@@ -2671,10 +2532,8 @@ onBeforeUnmount(() => {
                                 </svg>
                             </div>
 
-                            <!-- Content -->
-                            <div
-                                class="mt-4 text-center"
-                            >
+                            <!-- Text -->
+                            <div class="mt-4 text-center">
                                 <h3
                                     id="procurement-confirm-title"
                                     class="text-base font-semibold text-[#1b1b18] dark:text-[#EDEDEC]"
@@ -2688,13 +2547,39 @@ onBeforeUnmount(() => {
                                     {{ confirmMessage }}
                                 </p>
 
+                                <!-- Selected procurement -->
+                                <div
+                                    v-if="selectedProcurement"
+                                    class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 text-left dark:border-emerald-900/50 dark:bg-emerald-950/20"
+                                >
+                                    <div
+                                        class="text-xs font-semibold text-emerald-800 dark:text-emerald-300"
+                                    >
+                                        {{ selectedProcurement.item_name }}
+                                    </div>
+
+                                    <div
+                                        class="mt-1 text-[11px] leading-5 text-emerald-700 dark:text-emerald-400"
+                                    >
+                                        Jumlah:
+                                        {{ selectedProcurement.quantity }}
+
+                                        <span class="mx-1"> &middot; </span>
+
+                                        Status:
+                                        {{
+                                            statusLabel(
+                                                selectedProcurement.status,
+                                            )
+                                        }}
+                                    </div>
+                                </div>
+
                                 <!-- Information -->
                                 <div
                                     class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-left dark:border-emerald-900/50 dark:bg-emerald-950/20"
                                 >
-                                    <div
-                                        class="flex gap-3"
-                                    >
+                                    <div class="flex gap-3">
                                         <svg
                                             xmlns="http://www.w3.org/2000/svg"
                                             fill="none"
@@ -2713,12 +2598,10 @@ onBeforeUnmount(() => {
                                         <p
                                             class="text-xs leading-5 text-emerald-700 dark:text-emerald-400"
                                         >
-                                            Status ini menandakan
-                                            bahwa proses pengadaan
-                                            sudah selesai dilakukan.
-                                            Data inventaris tidak
-                                            dibuat secara otomatis
-                                            oleh aksi ini.
+                                            Status ini menandakan bahwa proses
+                                            pengadaan sudah selesai dilakukan.
+                                            Data inventaris tidak dibuat secara
+                                            otomatis oleh aksi ini.
                                         </p>
                                     </div>
                                 </div>
@@ -2727,33 +2610,25 @@ onBeforeUnmount(() => {
 
                         <!-- Footer -->
                         <div
-                            class="flex flex-col-reverse gap-2 border-t border-[#e3e3e0] bg-[#fafafa] p-4 sm:flex-row sm:justify-end dark:border-[#3E3E3A] dark:bg-[#111110]"
+                            class="flex flex-col-reverse gap-2 border-t border-[#e3e3e0] bg-[#fafafa] p-4 dark:border-[#3E3E3A] dark:bg-[#111110] sm:flex-row sm:justify-end"
                         >
                             <button
                                 type="button"
-                                :disabled="
-                                    isConfirmProcessing
-                                "
-                                @click="
-                                    closeConfirmModal
-                                "
-                                class="w-full rounded-lg border border-[#e3e3e0] bg-white px-4 py-2.5 text-sm font-medium text-[#1b1b18] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#EDEDEC] dark:hover:bg-[#20201e]"
+                                :disabled="isConfirmProcessing"
+                                @click="closeConfirmModal"
+                                class="w-full rounded-lg border border-[#e3e3e0] bg-white px-4 py-2.5 text-sm font-medium text-[#1b1b18] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#EDEDEC] dark:hover:bg-[#20201e] sm:w-auto"
                             >
                                 Batal
                             </button>
 
                             <button
                                 type="button"
-                                :disabled="
-                                    isConfirmProcessing
-                                "
+                                :disabled="isConfirmProcessing"
                                 @click="executeConfirm"
-                                class="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto dark:bg-emerald-600 dark:hover:bg-emerald-500"
+                                class="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-600 dark:hover:bg-emerald-500 sm:w-auto"
                             >
                                 <svg
-                                    v-if="
-                                        isConfirmProcessing
-                                    "
+                                    v-if="isConfirmProcessing"
                                     xmlns="http://www.w3.org/2000/svg"
                                     class="h-4 w-4 animate-spin"
                                     fill="none"
@@ -2775,11 +2650,13 @@ onBeforeUnmount(() => {
                                     />
                                 </svg>
 
-                                {{
-                                    isConfirmProcessing
-                                        ? "Memproses..."
-                                        : "Ya, Tandai Selesai"
-                                }}
+                                <span>
+                                    {{
+                                        isConfirmProcessing
+                                            ? "Memproses..."
+                                            : "Ya, Tandai Selesai"
+                                    }}
+                                </span>
                             </button>
                         </div>
                     </div>
@@ -2813,10 +2690,9 @@ onBeforeUnmount(() => {
                 <!-- Backdrop -->
                 <div
                     class="absolute inset-0 bg-black/50 backdrop-blur-sm dark:bg-black/70"
-                    @click="closeDeleteModal"
+                    @click.self="closeDeleteModal"
                 ></div>
 
-                <!-- Modal -->
                 <Transition
                     appear
                     enter-active-class="transition duration-200 ease-out"
@@ -2829,125 +2705,129 @@ onBeforeUnmount(() => {
                     <div
                         v-if="isDeleteModalOpen"
                         class="relative w-full max-w-md overflow-hidden rounded-2xl border border-[#e3e3e0] bg-white shadow-2xl dark:border-[#3E3E3A] dark:bg-[#161615]"
+                        @click.stop
                     >
-                        <!-- Header -->
-                        <div
-                            class="border-b border-[#e3e3e0] px-6 py-5 dark:border-[#3E3E3A]"
-                        >
-                            <div
-                                class="flex items-start gap-4"
-                            >
-                                <!-- Warning Icon -->
-                                <div
-                                    class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600 dark:bg-red-950/40 dark:text-red-400"
-                                >
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        stroke-width="1.5"
-                                        stroke="currentColor"
-                                        class="h-6 w-6"
-                                    >
-                                        <path
-                                            stroke-linecap="round"
-                                            stroke-linejoin="round"
-                                            d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"
-                                        />
-                                    </svg>
-                                </div>
-
-                                <div
-                                    class="min-w-0 flex-1"
-                                >
-                                    <h3
-                                        id="procurement-delete-title"
-                                        class="text-base font-semibold text-[#1b1b18] dark:text-[#EDEDEC]"
-                                    >
-                                        Hapus Pengajuan?
-                                    </h3>
-
-                                    <p
-                                        class="mt-1 text-sm leading-6 text-[#706f6c] dark:text-[#A1A09A]"
-                                    >
-                                        Apakah kamu yakin ingin
-                                        menghapus pengajuan ini?
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
                         <!-- Content -->
-                        <div class="px-6 py-5">
+                        <div class="p-6">
+                            <!-- Warning Icon -->
                             <div
-                                v-if="deleteTarget"
-                                class="rounded-xl border border-red-100 bg-red-50 p-4 dark:border-red-900/40 dark:bg-red-950/20"
+                                class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400"
                             >
-                                <p
-                                    class="text-sm font-medium text-red-800 dark:text-red-300"
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke-width="1.8"
+                                    stroke="currentColor"
+                                    class="h-6 w-6"
                                 >
-                                    {{
-                                        deleteTarget.item_name
-                                    }}
-                                </p>
-
-                                <p
-                                    class="mt-1 text-xs text-red-600 dark:text-red-400"
-                                >
-                                    Jumlah:
-                                    {{
-                                        deleteTarget.quantity
-                                    }}
-                                    ·
-                                    {{
-                                        typeLabel(
-                                            deleteTarget.type,
-                                        )
-                                    }}
-                                </p>
+                                    <path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        d="M12 9v3.75m0 3h.008v.008H12v-.008ZM10.29 3.86 2.82 17.5a2.25 2.25 0 0 0 1.97 3.375h14.42a2.25 2.25 0 0 0 1.97-3.375L13.71 3.86a2.25 2.25 0 0 0-3.42 0Z"
+                                    />
+                                </svg>
                             </div>
 
-                            <p
-                                class="mt-4 text-sm leading-6 text-[#706f6c] dark:text-[#A1A09A]"
-                            >
-                                Data yang dihapus tidak dapat
-                                dikembalikan. Pastikan
-                                pengajuan yang dipilih memang
-                                sudah tidak diperlukan.
-                            </p>
+                            <!-- Text -->
+                            <div class="mt-4 text-center">
+                                <h3
+                                    id="procurement-delete-title"
+                                    class="text-base font-semibold text-[#1b1b18] dark:text-[#EDEDEC]"
+                                >
+                                    {{ deleteTitle }}
+                                </h3>
+
+                                <p
+                                    class="mt-2 text-sm leading-6 text-[#706f6c] dark:text-[#A1A09A]"
+                                >
+                                    {{ deleteMessage }}
+                                </p>
+
+                                <!-- Selected procurement -->
+                                <div
+                                    v-if="selectedProcurement"
+                                    class="mt-4 rounded-lg border border-red-200 bg-red-50/70 p-3 text-left dark:border-red-900/50 dark:bg-red-950/20"
+                                >
+                                    <div
+                                        class="text-xs font-semibold text-red-800 dark:text-red-300"
+                                    >
+                                        {{ selectedProcurement.item_name }}
+                                    </div>
+
+                                    <div
+                                        class="mt-1 text-[11px] leading-5 text-red-700 dark:text-red-400"
+                                    >
+                                        Jumlah:
+                                        {{ selectedProcurement.quantity }}
+
+                                        <span class="mx-1"> &middot; </span>
+
+                                        Status:
+                                        {{
+                                            statusLabel(
+                                                selectedProcurement.status,
+                                            )
+                                        }}
+                                    </div>
+                                </div>
+
+                                <!-- Warning -->
+                                <div
+                                    class="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-left dark:border-red-900/50 dark:bg-red-950/20"
+                                >
+                                    <div class="flex gap-3">
+                                        <svg
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            fill="none"
+                                            viewBox="0 0 24 24"
+                                            stroke-width="1.8"
+                                            stroke="currentColor"
+                                            class="mt-0.5 h-5 w-5 shrink-0 text-red-600 dark:text-red-400"
+                                        >
+                                            <path
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                                d="M12 9v3.75m0 3h.008v.008H12v-.008ZM10.29 3.86 2.82 17.5a2.25 2.25 0 0 0 1.97 3.375h14.42a2.25 2.25 0 0 0 1.97-3.375L13.71 3.86a2.25 2.25 0 0 0-3.42 0Z"
+                                            />
+                                        </svg>
+
+                                        <p
+                                            class="text-xs leading-5 text-red-700 dark:text-red-400"
+                                        >
+                                            Data pengajuan yang dihapus tidak
+                                            dapat dikembalikan. Pastikan Anda
+                                            benar-benar ingin menghapus
+                                            pengajuan ini.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Footer -->
                         <div
-                            class="flex items-center justify-end gap-3 border-t border-[#e3e3e0] px-6 py-4 dark:border-[#3E3E3A]"
+                            class="flex flex-col-reverse gap-2 border-t border-[#e3e3e0] bg-[#fafafa] p-4 dark:border-[#3E3E3A] dark:bg-[#111110] sm:flex-row sm:justify-end"
                         >
                             <button
                                 type="button"
-                                @click="
-                                    closeDeleteModal
-                                "
-                                :disabled="
-                                    isDeleteProcessing
-                                "
-                                class="rounded-lg border border-[#e3e3e0] bg-white px-4 py-2 text-sm font-medium text-[#1b1b18] transition hover:bg-[#f5f5f3] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#EDEDEC] dark:hover:bg-[#1f1f1e]"
+                                :disabled="isDeleteProcessing"
+                                @click="closeDeleteModal"
+                                class="w-full rounded-lg border border-[#e3e3e0] bg-white px-4 py-2.5 text-sm font-medium text-[#1b1b18] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#3E3E3A] dark:bg-[#161615] dark:text-[#EDEDEC] dark:hover:bg-[#20201e] sm:w-auto"
                             >
                                 Batal
                             </button>
 
                             <button
                                 type="button"
+                                :disabled="isDeleteProcessing"
                                 @click="executeDelete"
-                                :disabled="
-                                    isDeleteProcessing
-                                "
-                                class="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-red-500 dark:hover:bg-red-600"
+                                class="flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-red-600 dark:hover:bg-red-500 sm:w-auto"
                             >
                                 <svg
-                                    v-if="
-                                        isDeleteProcessing
-                                    "
-                                    class="h-4 w-4 animate-spin"
+                                    v-if="isDeleteProcessing"
                                     xmlns="http://www.w3.org/2000/svg"
+                                    class="h-4 w-4 animate-spin"
                                     fill="none"
                                     viewBox="0 0 24 24"
                                 >
@@ -2967,11 +2847,13 @@ onBeforeUnmount(() => {
                                     />
                                 </svg>
 
-                                {{
-                                    isDeleteProcessing
-                                        ? "Menghapus..."
-                                        : "Ya, Hapus"
-                                }}
+                                <span>
+                                    {{
+                                        isDeleteProcessing
+                                            ? "Menghapus..."
+                                            : "Ya, Hapus Pengajuan"
+                                    }}
+                                </span>
                             </button>
                         </div>
                     </div>

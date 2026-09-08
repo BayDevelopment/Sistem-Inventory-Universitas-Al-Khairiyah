@@ -139,33 +139,33 @@ class ProcurementController extends Controller
             ->paginate(15)
             ->withQueryString()
             ->through(
-                fn (Procurement $procurement) =>
-                    $this->transformProcurement(
-                        $procurement
-                    )
+                fn(Procurement $procurement) =>
+                $this->transformProcurement(
+                    $procurement
+                )
             );
 
         $faculties = $this->canViewAllFaculties($user)
             ? Faculty::query()
-                ->select(
-                    'id',
-                    'code',
-                    'name'
-                )
-                ->orderBy('name')
-                ->get()
+            ->select(
+                'id',
+                'code',
+                'name'
+            )
+            ->orderBy('name')
+            ->get()
             : Faculty::query()
-                ->where(
-                    'id',
-                    $user->faculty_id
-                )
-                ->select(
-                    'id',
-                    'code',
-                    'name'
-                )
-                ->orderBy('name')
-                ->get();
+            ->where(
+                'id',
+                $user->faculty_id
+            )
+            ->select(
+                'id',
+                'code',
+                'name'
+            )
+            ->orderBy('name')
+            ->get();
 
         return Inertia::render(
             'Admin/Procurements/Index',
@@ -175,32 +175,32 @@ class ProcurementController extends Controller
                 'faculties' => $faculties,
 
                 'rooms' =>
-                    $this->getAvailableRooms($user),
+                $this->getAvailableRooms($user),
 
                 'filters' => [
                     'search' =>
-                        $request->input(
-                            'search',
-                            ''
-                        ),
+                    $request->input(
+                        'search',
+                        ''
+                    ),
 
                     'status' =>
-                        $request->input(
-                            'status',
-                            ''
-                        ),
+                    $request->input(
+                        'status',
+                        ''
+                    ),
 
                     'type' =>
-                        $request->input(
-                            'type',
-                            ''
-                        ),
+                    $request->input(
+                        'type',
+                        ''
+                    ),
 
                     'faculty_id' =>
-                        $request->input(
-                            'faculty_id',
-                            ''
-                        ),
+                    $request->input(
+                        'faculty_id',
+                        ''
+                    ),
                 ],
             ]
         );
@@ -325,48 +325,48 @@ class ProcurementController extends Controller
 
                     Procurement::create([
                         'faculty_id' =>
-                            $facultyId,
+                        $facultyId,
 
                         'requested_by' =>
-                            $user->id,
+                        $user->id,
 
                         'room_id' =>
-                            (int) $validated['room_id'],
+                        (int) $validated['room_id'],
 
                         'item_name' =>
-                            trim(
-                                $validated['item_name']
-                            ),
+                        trim(
+                            $validated['item_name']
+                        ),
 
                         'quantity' =>
-                            (int) $validated['quantity'],
+                        (int) $validated['quantity'],
 
                         'type' =>
-                            $validated['type'],
+                        $validated['type'],
 
                         'reason' =>
-                            trim(
-                                $validated['reason']
-                            ),
+                        trim(
+                            $validated['reason']
+                        ),
 
                         'subject' =>
-                            $this->resolveSubject(
-                                $validated['subject'] ?? null,
-                                $validated['type'],
-                                $validated['item_name']
-                            ),
+                        $this->resolveSubject(
+                            $validated['subject'] ?? null,
+                            $validated['type'],
+                            $validated['item_name']
+                        ),
 
                         'attachments' =>
-                            $storedAttachments ?: null,
+                        $storedAttachments ?: null,
 
                         'requester_signature' =>
-                            $signaturePath,
+                        $signaturePath,
 
                         'requested_at' =>
-                            now(),
+                        now(),
 
                         'status' =>
-                            Procurement::STATUS_PENDING,
+                        Procurement::STATUS_PENDING,
                     ]);
                 }
             );
@@ -387,7 +387,7 @@ class ProcurementController extends Controller
             [
                 'type' => 'success',
                 'message' =>
-                    'Pengajuan pengadaan berhasil dibuat.',
+                'Pengajuan pengadaan berhasil dibuat.',
             ]
         );
     }
@@ -412,9 +412,9 @@ class ProcurementController extends Controller
             'Admin/Procurements/Show',
             [
                 'procurement' =>
-                    $this->transformProcurement(
-                        $procurement
-                    ),
+                $this->transformProcurement(
+                    $procurement
+                ),
             ]
         );
     }
@@ -528,17 +528,17 @@ class ProcurementController extends Controller
                 ) {
                     $lockedProcurement =
                         Procurement::query()
-                            ->lockForUpdate()
-                            ->findOrFail(
-                                $procurement->id
-                            );
+                        ->lockForUpdate()
+                        ->findOrFail(
+                            $procurement->id
+                        );
 
                     if (
                         !$lockedProcurement->isPending()
                     ) {
                         throw ValidationException::withMessages([
                             'procurement' =>
-                                'Pengajuan ini sudah diproses dan tidak dapat diubah.',
+                            'Pengajuan ini sudah diproses dan tidak dapat diubah.',
                         ]);
                     }
 
@@ -551,24 +551,24 @@ class ProcurementController extends Controller
                         is_array(
                             $lockedProcurement->attachments
                         )
-                            ? $lockedProcurement->attachments
-                            : [];
+                        ? $lockedProcurement->attachments
+                        : [];
 
                     $removePaths =
                         $validated['remove_attachments']
-                            ?? [];
+                        ?? [];
 
                     $retainedAttachments =
                         array_values(
                             array_filter(
                                 $existingAttachments,
-                                fn ($attachment) =>
-                                    !in_array(
-                                        $attachment['path']
-                                            ?? null,
-                                        $removePaths,
-                                        true
-                                    )
+                                fn($attachment) =>
+                                !in_array(
+                                    $attachment['path']
+                                        ?? null,
+                                    $removePaths,
+                                    true
+                                )
                             )
                         );
 
@@ -576,13 +576,13 @@ class ProcurementController extends Controller
                         array_values(
                             array_filter(
                                 $existingAttachments,
-                                fn ($attachment) =>
-                                    in_array(
-                                        $attachment['path']
-                                            ?? null,
-                                        $removePaths,
-                                        true
-                                    )
+                                fn($attachment) =>
+                                in_array(
+                                    $attachment['path']
+                                        ?? null,
+                                    $removePaths,
+                                    true
+                                )
                             )
                         );
 
@@ -604,7 +604,7 @@ class ProcurementController extends Controller
                     ) {
                         throw ValidationException::withMessages([
                             'attachments' =>
-                                'Maksimal ' .
+                            'Maksimal ' .
                                 self::MAX_ATTACHMENTS .
                                 ' lampiran per pengajuan.',
                         ]);
@@ -625,39 +625,39 @@ class ProcurementController extends Controller
 
                     $lockedProcurement->update([
                         'room_id' =>
-                            (int) $validated['room_id'],
+                        (int) $validated['room_id'],
 
                         'item_name' =>
-                            trim(
-                                $validated['item_name']
-                            ),
+                        trim(
+                            $validated['item_name']
+                        ),
 
                         'quantity' =>
-                            (int) $validated['quantity'],
+                        (int) $validated['quantity'],
 
                         'type' =>
-                            $validated['type'],
+                        $validated['type'],
 
                         'reason' =>
-                            trim(
-                                $validated['reason']
-                            ),
+                        trim(
+                            $validated['reason']
+                        ),
 
                         'subject' =>
-                            $this->resolveSubject(
-                                $validated['subject'] ?? null,
-                                $validated['type'],
-                                $validated['item_name']
-                            ),
+                        $this->resolveSubject(
+                            $validated['subject'] ?? null,
+                            $validated['type'],
+                            $validated['item_name']
+                        ),
 
                         'attachments' =>
-                            array_merge(
-                                $retainedAttachments,
-                                $newAttachments
-                            ) ?: null,
+                        array_merge(
+                            $retainedAttachments,
+                            $newAttachments
+                        ) ?: null,
 
                         'requester_signature' =>
-                            $signaturePath,
+                        $signaturePath,
                     ]);
                 }
             );
@@ -701,7 +701,7 @@ class ProcurementController extends Controller
             [
                 'type' => 'success',
                 'message' =>
-                    'Pengajuan pengadaan berhasil diperbarui.',
+                'Pengajuan pengadaan berhasil diperbarui.',
             ]
         );
     }
@@ -726,17 +726,17 @@ class ProcurementController extends Controller
             ) {
                 $lockedProcurement =
                     Procurement::query()
-                        ->lockForUpdate()
-                        ->findOrFail(
-                            $procurement->id
-                        );
+                    ->lockForUpdate()
+                    ->findOrFail(
+                        $procurement->id
+                    );
 
                 if (
                     !$lockedProcurement->isPending()
                 ) {
                     throw ValidationException::withMessages([
                         'procurement' =>
-                            'Pengajuan ini sudah diproses dan tidak dapat dihapus.',
+                        'Pengajuan ini sudah diproses dan tidak dapat dihapus.',
                     ]);
                 }
 
@@ -749,8 +749,8 @@ class ProcurementController extends Controller
                     is_array(
                         $lockedProcurement->attachments
                     )
-                        ? $lockedProcurement->attachments
-                        : [];
+                    ? $lockedProcurement->attachments
+                    : [];
 
                 $lockedProcurement->delete();
             }
@@ -769,7 +769,7 @@ class ProcurementController extends Controller
             [
                 'type' => 'success',
                 'message' =>
-                    'Pengajuan pengadaan berhasil dihapus.',
+                'Pengajuan pengadaan berhasil dihapus.',
             ]
         );
     }
@@ -820,17 +820,17 @@ class ProcurementController extends Controller
                 ) {
                     $lockedProcurement =
                         Procurement::query()
-                            ->lockForUpdate()
-                            ->findOrFail(
-                                $procurement->id
-                            );
+                        ->lockForUpdate()
+                        ->findOrFail(
+                            $procurement->id
+                        );
 
                     if (
                         !$lockedProcurement->isPending()
                     ) {
                         throw ValidationException::withMessages([
                             'procurement' =>
-                                'Pengajuan ini sudah diproses sebelumnya.',
+                            'Pengajuan ini sudah diproses sebelumnya.',
                         ]);
                     }
 
@@ -849,28 +849,28 @@ class ProcurementController extends Controller
 
                     $lockedProcurement->update([
                         'status' =>
-                            Procurement::STATUS_APPROVED,
+                        Procurement::STATUS_APPROVED,
 
                         'document_number' =>
-                            $documentNumber,
+                        $documentNumber,
 
                         'processed_by' =>
-                            $user->id,
+                        $user->id,
 
                         'approver_signature' =>
-                            $signaturePath,
+                        $signaturePath,
 
                         'processed_at' =>
-                            now(),
+                        now(),
 
                         'admin_note' =>
-                            isset(
+                        isset(
+                            $validated['admin_note']
+                        )
+                            ? trim(
                                 $validated['admin_note']
                             )
-                                ? trim(
-                                    $validated['admin_note']
-                                )
-                                : null,
+                            : null,
                     ]);
                 }
             );
@@ -887,7 +887,7 @@ class ProcurementController extends Controller
             [
                 'type' => 'success',
                 'message' =>
-                    'Pengajuan pengadaan berhasil disetujui.',
+                'Pengajuan pengadaan berhasil disetujui.',
             ]
         );
     }
@@ -939,40 +939,40 @@ class ProcurementController extends Controller
                 ) {
                     $lockedProcurement =
                         Procurement::query()
-                            ->lockForUpdate()
-                            ->findOrFail(
-                                $procurement->id
-                            );
+                        ->lockForUpdate()
+                        ->findOrFail(
+                            $procurement->id
+                        );
 
                     if (
                         !$lockedProcurement->isPending()
                     ) {
                         throw ValidationException::withMessages([
                             'procurement' =>
-                                'Pengajuan ini sudah diproses sebelumnya.',
+                            'Pengajuan ini sudah diproses sebelumnya.',
                         ]);
                     }
 
                     $lockedProcurement->update([
                         'status' =>
-                            Procurement::STATUS_REJECTED,
+                        Procurement::STATUS_REJECTED,
 
                         'processed_by' =>
-                            $user->id,
+                        $user->id,
 
                         'approver_signature' =>
-                            $signaturePath,
+                        $signaturePath,
 
                         'processed_at' =>
-                            now(),
+                        now(),
 
                         'admin_note' =>
-                            trim(
-                                $validated['admin_note']
-                            ),
+                        trim(
+                            $validated['admin_note']
+                        ),
 
                         'document_number' =>
-                            null,
+                        null,
                     ]);
                 }
             );
@@ -989,7 +989,7 @@ class ProcurementController extends Controller
             [
                 'type' => 'success',
                 'message' =>
-                    'Pengajuan pengadaan berhasil ditolak.',
+                'Pengajuan pengadaan berhasil ditolak.',
             ]
         );
     }
@@ -1014,23 +1014,23 @@ class ProcurementController extends Controller
             function () use ($procurement) {
                 $lockedProcurement =
                     Procurement::query()
-                        ->lockForUpdate()
-                        ->findOrFail(
-                            $procurement->id
-                        );
+                    ->lockForUpdate()
+                    ->findOrFail(
+                        $procurement->id
+                    );
 
                 if (
                     !$lockedProcurement->isApproved()
                 ) {
                     throw ValidationException::withMessages([
                         'procurement' =>
-                            'Hanya pengadaan yang sudah disetujui yang dapat diselesaikan.',
+                        'Hanya pengadaan yang sudah disetujui yang dapat diselesaikan.',
                     ]);
                 }
 
                 $lockedProcurement->update([
                     'status' =>
-                        Procurement::STATUS_COMPLETED,
+                    Procurement::STATUS_COMPLETED,
                 ]);
             }
         );
@@ -1040,7 +1040,7 @@ class ProcurementController extends Controller
             [
                 'type' => 'success',
                 'message' =>
-                    'Pengadaan berhasil ditandai sebagai selesai.',
+                'Pengadaan berhasil ditandai sebagai selesai.',
             ]
         );
     }
@@ -1054,6 +1054,12 @@ class ProcurementController extends Controller
             $procurement
         );
 
+        /*
+    |--------------------------------------------------------------------------
+    | Dokumen hanya dapat dicetak setelah disetujui
+    |--------------------------------------------------------------------------
+    */
+
         if (
             !in_array(
                 $procurement->status,
@@ -1066,35 +1072,64 @@ class ProcurementController extends Controller
         ) {
             throw ValidationException::withMessages([
                 'procurement' =>
-                    'Dokumen hanya dapat dicetak setelah pengajuan disetujui.',
+                'Dokumen hanya dapat dicetak setelah pengajuan disetujui.',
             ]);
         }
 
+        /*
+    |--------------------------------------------------------------------------
+    | Nomor dokumen wajib tersedia
+    |--------------------------------------------------------------------------
+    */
+
         if (
-            empty(
-                $procurement->document_number
-            )
+            empty($procurement->document_number)
         ) {
             throw ValidationException::withMessages([
                 'procurement' =>
-                    'Nomor dokumen belum tersedia.',
+                'Nomor dokumen belum tersedia.',
             ]);
         }
 
+        /*
+    |--------------------------------------------------------------------------
+    | Load seluruh data yang memang digunakan print.vue
+    |--------------------------------------------------------------------------
+    |
+    | Faculty:
+    | - id
+    | - name
+    | - code
+    | - letterhead_path
+    | - dean
+    | - dean_nip
+    | - dean_signature
+    |
+    | Requester / Processor:
+    | - id
+    | - name
+    | - position
+    | - nip
+    |
+    */
+
         $procurement->load([
-            'faculty',
-            'requester:id,name',
+            'faculty:id,name,code,letterhead_path,dean,dean_nip,dean_signature',
+
+            'requester:id,name,position,nip',
+
             'room:id,faculty_id,code,name,building,floor',
-            'processor:id,name',
+
+            'processor:id,name,position,nip',
         ]);
 
         return Inertia::render(
             'Admin/Procurements/Print',
             [
                 'procurement' =>
-                    $this->transformProcurement(
-                        $procurement
-                    ),
+                $this->transformProcurement(
+                    $procurement
+                ),
             ]
         );
     }
@@ -1106,55 +1141,62 @@ class ProcurementController extends Controller
 
         $disk = Storage::disk('public');
 
+        /*
+    |--------------------------------------------------------------------------
+    | Attachments
+    |--------------------------------------------------------------------------
+    */
+
         $attachments =
             is_array(
                 $procurement->attachments
             )
-                ? $procurement->attachments
-                : [];
+            ? $procurement->attachments
+            : [];
 
         $data['attachments'] =
             collect($attachments)
-                ->filter(
-                    fn ($attachment) =>
-                        is_array($attachment) &&
-                        !empty(
+            ->filter(
+                fn($attachment) =>
+                is_array($attachment) &&
+                    !empty($attachment['path'])
+            )
+            ->map(
+                fn($attachment) => [
+                    'path' =>
+                    $attachment['path'],
+
+                    'name' =>
+                    $attachment['name']
+                        ??
+                        basename(
                             $attachment['path']
-                        )
-                )
-                ->map(
-                    fn ($attachment) => [
-                        'path' =>
-                            $attachment['path'],
+                        ),
 
-                        'name' =>
-                            $attachment['name']
-                                ??
-                            basename(
-                                $attachment['path']
-                            ),
-
-                        'url' =>
-                            $disk->url(
-                                $attachment['path']
-                            ),
-                    ]
-                )
-                ->values()
-                ->all();
+                    'url' =>
+                    $disk->url(
+                        $attachment['path']
+                    ),
+                ]
+            )
+            ->values()
+            ->all();
 
         /*
-         * PENTING:
-         *
-         * Jangan menggunakan:
-         *
-         * $procurement->requester_signature
-         *
-         * karena accessor model dapat mengubah
-         * nilai database menjadi Markdown.
-         *
-         * Gunakan raw database value.
-         */
+    |--------------------------------------------------------------------------
+    | Procurement Signatures
+    |--------------------------------------------------------------------------
+    |
+    | Ambil RAW value dari database.
+    |
+    | Jangan gunakan:
+    | $procurement->requester_signature
+    |
+    | karena model bisa memiliki accessor yang mengubah
+    | path menjadi Markdown / presentation URL.
+    |
+    */
+
         $requesterSignature =
             $procurement->getRawOriginal(
                 'requester_signature'
@@ -1175,7 +1217,173 @@ class ProcurementController extends Controller
                 $approverSignature
             );
 
+        /*
+    |--------------------------------------------------------------------------
+    | Faculty
+    |--------------------------------------------------------------------------
+    |
+    | Sesuai migration faculties:
+    |
+    | id
+    | name
+    | code
+    | letterhead_path
+    | dean
+    | dean_nip
+    | dean_signature
+    |
+    */
+
+        if (
+            isset($data['faculty']) &&
+            is_array($data['faculty'])
+        ) {
+            /*
+         * Kop surat
+         */
+            if (
+                array_key_exists(
+                    'letterhead_path',
+                    $data['faculty']
+                )
+            ) {
+                $data['faculty']['letterhead_path'] =
+                    $this->publicDiskUrl(
+                        $data['faculty']['letterhead_path']
+                    );
+            }
+
+            /*
+         * Tanda tangan Dekan
+         */
+            if (
+                array_key_exists(
+                    'dean_signature',
+                    $data['faculty']
+                )
+            ) {
+                $data['faculty']['dean_signature'] =
+                    $this->publicDiskUrl(
+                        $data['faculty']['dean_signature']
+                    );
+            }
+
+            /*
+         * Pastikan field migration tetap tersedia
+         * walaupun nilainya NULL.
+         */
+            $data['faculty']['dean'] =
+                $data['faculty']['dean']
+                ?? null;
+
+            $data['faculty']['dean_nip'] =
+                $data['faculty']['dean_nip']
+                ?? null;
+
+            $data['faculty']['letterhead_path'] =
+                $data['faculty']['letterhead_path']
+                ?? null;
+
+            $data['faculty']['dean_signature'] =
+                $data['faculty']['dean_signature']
+                ?? null;
+        }
+
         return $data;
+    }
+
+    /**
+     * Resolve a plain storage-relative path (e.g. faculty letterhead
+     * or dean signature) into an absolute, browser-usable URL on the
+     * `public` disk. Unlike signatureUrl(), this does not need to
+     * understand legacy Markdown-wrapped values — those only ever
+     * applied to procurement signatures.
+     */
+    private function publicDiskUrl(
+        ?string $path
+    ): ?string {
+        if ($path === null) {
+            return null;
+        }
+
+        $path = trim($path);
+
+        if ($path === '') {
+            return null;
+        }
+
+        /*
+    |--------------------------------------------------------------------------
+    | URL absolut
+    |--------------------------------------------------------------------------
+    */
+
+        if (
+            str_starts_with($path, 'http://') ||
+            str_starts_with($path, 'https://')
+        ) {
+            return $path;
+        }
+
+        /*
+    |--------------------------------------------------------------------------
+    | Data URL
+    |--------------------------------------------------------------------------
+    |
+    | Tidak normal untuk field database faculty,
+    | tetapi jangan rusak jika data lama memilikinya.
+    |
+    */
+
+        if (
+            str_starts_with(
+                $path,
+                'data:image/'
+            )
+        ) {
+            return $path;
+        }
+
+        /*
+    |--------------------------------------------------------------------------
+    | Normalisasi /storage/...
+    |--------------------------------------------------------------------------
+    */
+
+        if (
+            str_starts_with(
+                $path,
+                '/storage/'
+            )
+        ) {
+            return url($path);
+        }
+
+        /*
+    |--------------------------------------------------------------------------
+    | Tolak path traversal
+    |--------------------------------------------------------------------------
+    */
+
+        if (
+            str_contains(
+                $path,
+                '..'
+            )
+        ) {
+            return null;
+        }
+
+        /*
+    |--------------------------------------------------------------------------
+    | Storage public
+    |--------------------------------------------------------------------------
+    */
+
+        return Storage::disk('public')
+            ->url(
+                ltrim($path, '/')
+            );
     }
 
     private function resolveSubject(
@@ -1203,30 +1411,30 @@ class ProcurementController extends Controller
     ): string {
         $faculty =
             Faculty::query()
-                ->select(
-                    'id',
-                    'code'
-                )
-                ->findOrFail(
-                    $facultyId
-                );
+            ->select(
+                'id',
+                'code'
+            )
+            ->findOrFail(
+                $facultyId
+            );
 
         $year = now()->year;
 
         $sequence =
             Procurement::query()
-                ->where(
-                    'faculty_id',
-                    $facultyId
-                )
-                ->whereYear(
-                    'processed_at',
-                    $year
-                )
-                ->whereNotNull(
-                    'document_number'
-                )
-                ->count() + 1;
+            ->where(
+                'faculty_id',
+                $facultyId
+            )
+            ->whereYear(
+                'processed_at',
+                $year
+            )
+            ->whereNotNull(
+                'document_number'
+            )
+            ->count() + 1;
 
         $sequencePadded =
             str_pad(
@@ -1308,16 +1516,16 @@ class ProcurementController extends Controller
                 ) {
                     throw ValidationException::withMessages([
                         'attachments' =>
-                            'Salah satu lampiran gagal disimpan.',
+                        'Salah satu lampiran gagal disimpan.',
                     ]);
                 }
 
                 $stored[] = [
                     'path' =>
-                        $path,
+                    $path,
 
                     'name' =>
-                        $file->getClientOriginalName(),
+                    $file->getClientOriginalName(),
                 ];
             }
         } catch (\Throwable $e) {
@@ -1343,7 +1551,7 @@ class ProcurementController extends Controller
 
             $path =
                 $attachment['path']
-                    ?? null;
+                ?? null;
 
             if (
                 !is_string($path) ||
@@ -1379,17 +1587,17 @@ class ProcurementController extends Controller
     ): void {
         $exists =
             Room::query()
-                ->whereKey($roomId)
-                ->where(
-                    'faculty_id',
-                    $facultyId
-                )
-                ->exists();
+            ->whereKey($roomId)
+            ->where(
+                'faculty_id',
+                $facultyId
+            )
+            ->exists();
 
         if (!$exists) {
             throw ValidationException::withMessages([
                 'room_id' =>
-                    'Ruangan tidak berada dalam fakultas yang dipilih.',
+                'Ruangan tidak berada dalam fakultas yang dipilih.',
             ]);
         }
     }
@@ -1405,21 +1613,21 @@ class ProcurementController extends Controller
             ) {
                 throw ValidationException::withMessages([
                     'faculty_id' =>
-                        'Fakultas wajib dipilih.',
+                    'Fakultas wajib dipilih.',
                 ]);
             }
 
             $exists =
                 Faculty::query()
-                    ->whereKey(
-                        $requestedFacultyId
-                    )
-                    ->exists();
+                ->whereKey(
+                    $requestedFacultyId
+                )
+                ->exists();
 
             if (!$exists) {
                 throw ValidationException::withMessages([
                     'faculty_id' =>
-                        'Fakultas yang dipilih tidak valid.',
+                    'Fakultas yang dipilih tidak valid.',
                 ]);
             }
 
@@ -1436,7 +1644,7 @@ class ProcurementController extends Controller
 
         throw ValidationException::withMessages([
             'faculty_id' =>
-                'Anda tidak memiliki izin untuk membuat pengajuan pengadaan.',
+            'Anda tidak memiliki izin untuk membuat pengajuan pengadaan.',
         ]);
     }
 
@@ -1445,15 +1653,15 @@ class ProcurementController extends Controller
     ) {
         $query =
             Room::query()
-                ->select(
-                    'id',
-                    'faculty_id',
-                    'code',
-                    'name',
-                    'building',
-                    'floor'
-                )
-                ->orderBy('name');
+            ->select(
+                'id',
+                'faculty_id',
+                'code',
+                'name',
+                'building',
+                'floor'
+            )
+            ->orderBy('name');
 
         if ($this->isFacultyAdmin($user)) {
             $this->ensureUserHasFaculty(
@@ -1503,9 +1711,7 @@ class ProcurementController extends Controller
         $user
     ): void {
         if (
-            empty(
-                $user->faculty_id
-            )
+            empty($user->faculty_id)
         ) {
             abort(
                 403,
@@ -1559,7 +1765,7 @@ class ProcurementController extends Controller
         ) {
             throw ValidationException::withMessages([
                 $field =>
-                    'Tanda tangan harus berupa gambar PNG yang valid.',
+                'Tanda tangan harus berupa gambar PNG yang valid.',
             ]);
         }
 
@@ -1837,7 +2043,7 @@ class ProcurementController extends Controller
         ) {
             throw ValidationException::withMessages([
                 $field =>
-                    'Format tanda tangan tidak valid.',
+                'Format tanda tangan tidak valid.',
             ]);
         }
 
@@ -1852,7 +2058,7 @@ class ProcurementController extends Controller
         ) {
             throw ValidationException::withMessages([
                 $field =>
-                    'Data tanda tangan tidak dapat dibaca.',
+                'Data tanda tangan tidak dapat dibaca.',
             ]);
         }
 
@@ -1862,7 +2068,7 @@ class ProcurementController extends Controller
         ) {
             throw ValidationException::withMessages([
                 $field =>
-                    'Ukuran tanda tangan terlalu besar (maksimal 1MB).',
+                'Ukuran tanda tangan terlalu besar (maksimal 1MB).',
             ]);
         }
 
@@ -1881,7 +2087,7 @@ class ProcurementController extends Controller
         ) {
             throw ValidationException::withMessages([
                 $field =>
-                    'File tanda tangan bukan gambar yang valid.',
+                'File tanda tangan bukan gambar yang valid.',
             ]);
         }
 
@@ -1891,19 +2097,19 @@ class ProcurementController extends Controller
         ) {
             throw ValidationException::withMessages([
                 $field =>
-                    'Tanda tangan harus menggunakan format PNG.',
+                'Tanda tangan harus menggunakan format PNG.',
             ]);
         }
 
         if (
             $imageInfo[0] >
-                self::MAX_SIGNATURE_WIDTH ||
+            self::MAX_SIGNATURE_WIDTH ||
             $imageInfo[1] >
-                self::MAX_SIGNATURE_HEIGHT
+            self::MAX_SIGNATURE_HEIGHT
         ) {
             throw ValidationException::withMessages([
                 $field =>
-                    'Dimensi tanda tangan terlalu besar.',
+                'Dimensi tanda tangan terlalu besar.',
             ]);
         }
 
@@ -1917,7 +2123,7 @@ class ProcurementController extends Controller
         ) {
             throw ValidationException::withMessages([
                 $field =>
-                    'File tanda tangan bukan PNG yang valid.',
+                'File tanda tangan bukan PNG yang valid.',
             ]);
         }
 
@@ -1942,7 +2148,7 @@ class ProcurementController extends Controller
         if (!$stored) {
             throw ValidationException::withMessages([
                 $field =>
-                    'Tanda tangan gagal disimpan.',
+                'Tanda tangan gagal disimpan.',
             ]);
         }
 

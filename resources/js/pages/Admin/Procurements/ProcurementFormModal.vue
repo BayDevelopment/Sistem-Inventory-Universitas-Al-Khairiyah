@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, onBeforeUnmount } from "vue";
+import { ref, watch, nextTick, onBeforeUnmount, computed } from "vue";
 
 interface Faculty {
     id: number;
@@ -90,6 +90,12 @@ const ALLOWED_ATTACHMENT_EXTENSIONS = [
     ".pdf",
 ];
 
+// Unique-ish id suffix so multiple instances of this modal never collide
+// on label "for" / input "id" pairs.
+const uid = `proc-${Math.random().toString(36).slice(2, 9)}`;
+const fieldId = (name: string) => `${uid}-${name}`;
+const dialogTitleId = fieldId("title");
+
 const emptyForm = (): ProcurementFormData => ({
     faculty_id: 0,
     room_id: null,
@@ -111,6 +117,8 @@ const existingAttachments = ref<ExistingAttachment[]>([]);
 
 const attachmentInput = ref<HTMLInputElement | null>(null);
 
+const modalRoot = ref<HTMLElement | null>(null);
+
 /*
 |--------------------------------------------------------------------------
 | SIGNATURE CANVAS
@@ -124,6 +132,12 @@ const hasSignature = ref(false);
 
 let canvasContext: CanvasRenderingContext2D | null = null;
 
+// Bumped every time the canvas is (re)initialized so an in-flight
+// image.onload from a previous init can be safely ignored (avoids
+// drawing a stale/foreign signature onto a fresh canvas after rapid
+// close/reopen or switching between records).
+let canvasInitToken = 0;
+
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 250;
 
@@ -133,6 +147,8 @@ const initializeCanvas = () => {
     if (!canvas) {
         return;
     }
+
+    const initToken = ++canvasInitToken;
 
     canvas.width = CANVAS_WIDTH;
     canvas.height = CANVAS_HEIGHT;
@@ -146,12 +162,7 @@ const initializeCanvas = () => {
 
     canvasContext = context;
 
-    canvasContext.clearRect(
-        0,
-        0,
-        CANVAS_WIDTH,
-        CANVAS_HEIGHT,
-    );
+    canvasContext.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
     canvasContext.lineWidth = 2.5;
     canvasContext.lineCap = "round";
@@ -168,19 +179,25 @@ const initializeCanvas = () => {
     const image = new Image();
 
     image.onload = () => {
-        if (!canvasContext) {
+        // Bail out if the canvas was re-initialized (or unmounted)
+        // while this image was loading.
+        if (initToken !== canvasInitToken || !canvasContext) {
             return;
         }
 
-        canvasContext.drawImage(
-            image,
-            0,
-            0,
-            CANVAS_WIDTH,
-            CANVAS_HEIGHT,
-        );
+        canvasContext.drawImage(image, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
         hasSignature.value = true;
+    };
+
+    image.onerror = () => {
+        // Corrupt/unreachable signature data: fail quietly, leave
+        // the canvas blank rather than leaving the UI in a broken state.
+        if (initToken !== canvasInitToken) {
+            return;
+        }
+
+        hasSignature.value = false;
     };
 
     image.src = form.value.requester_signature;
@@ -234,11 +251,7 @@ const startDrawing = (event: PointerEvent) => {
 };
 
 const drawSignature = (event: PointerEvent) => {
-    if (
-        !isDrawing.value ||
-        !canvasContext ||
-        props.processing
-    ) {
+    if (!isDrawing.value || !canvasContext || props.processing) {
         return;
     }
 
@@ -265,11 +278,7 @@ const stopDrawing = (event?: PointerEvent) => {
 
     const canvas = signatureCanvas.value;
 
-    if (
-        canvas &&
-        event &&
-        canvas.hasPointerCapture(event.pointerId)
-    ) {
+    if (canvas && event && canvas.hasPointerCapture(event.pointerId)) {
         canvas.releasePointerCapture(event.pointerId);
     }
 
@@ -284,8 +293,7 @@ const saveSignature = () => {
         return;
     }
 
-    form.value.requester_signature =
-        canvas.toDataURL("image/png");
+    form.value.requester_signature = canvas.toDataURL("image/png");
 };
 
 const clearSignature = () => {
@@ -295,12 +303,7 @@ const clearSignature = () => {
         return;
     }
 
-    canvasContext.clearRect(
-        0,
-        0,
-        CANVAS_WIDTH,
-        CANVAS_HEIGHT,
-    );
+    canvasContext.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
     hasSignature.value = false;
     isDrawing.value = false;
@@ -314,22 +317,22 @@ const clearSignature = () => {
 */
 
 const totalAttachmentCount = () => {
-    return (
-        existingAttachments.value.length +
-        form.value.attachments.length
-    );
+    return existingAttachments.value.length + form.value.attachments.length;
 };
 
 const isAllowedAttachment = (file: File) => {
     const fileName = file.name.toLowerCase();
 
-    const hasAllowedExtension =
-        ALLOWED_ATTACHMENT_EXTENSIONS.some((extension) =>
-            fileName.endsWith(extension),
-        );
+    const hasAllowedExtension = ALLOWED_ATTACHMENT_EXTENSIONS.some(
+        (extension) => fileName.endsWith(extension),
+    );
 
+    // Some browsers/OSes report an empty or generic MIME type for
+    // certain files (e.g. some PDF sources on mobile browsers).
+    // Extension is treated as the primary signal; MIME type is only
+    // used as an additional check when the browser actually provides one.
     const hasAllowedMimeType =
-        ALLOWED_ATTACHMENT_TYPES.includes(file.type);
+        file.type === "" || ALLOWED_ATTACHMENT_TYPES.includes(file.type);
 
     return hasAllowedExtension && hasAllowedMimeType;
 };
@@ -339,6 +342,10 @@ const handleAttachmentsChange = (event: Event) => {
 
     const files = Array.from(target.files ?? []);
 
+    if (attachmentInput.value) {
+        attachmentInput.value.value = "";
+    }
+
     if (files.length === 0) {
         return;
     }
@@ -347,22 +354,19 @@ const handleAttachmentsChange = (event: Event) => {
 
     for (const file of files) {
         if (totalAttachmentCount() >= MAX_ATTACHMENTS) {
-            errorMessage.value =
-                `Maksimal ${MAX_ATTACHMENTS} lampiran per pengajuan.`;
+            errorMessage.value = `Maksimal ${MAX_ATTACHMENTS} lampiran per pengajuan.`;
 
             break;
         }
 
         if (!isAllowedAttachment(file)) {
-            errorMessage.value =
-                `File "${file.name}" harus berformat JPG, PNG, atau PDF.`;
+            errorMessage.value = `File "${file.name}" harus berformat JPG, PNG, atau PDF.`;
 
             continue;
         }
 
         if (file.size > MAX_ATTACHMENT_SIZE) {
-            errorMessage.value =
-                `File "${file.name}" melebihi batas maksimal 5MB.`;
+            errorMessage.value = `File "${file.name}" melebihi batas maksimal 5MB.`;
 
             continue;
         }
@@ -375,17 +379,12 @@ const handleAttachmentsChange = (event: Event) => {
         );
 
         if (alreadySelected) {
-            errorMessage.value =
-                `File "${file.name}" sudah dipilih.`;
+            errorMessage.value = `File "${file.name}" sudah dipilih.`;
 
             continue;
         }
 
         form.value.attachments.push(file);
-    }
-
-    if (attachmentInput.value) {
-        attachmentInput.value.value = "";
     }
 };
 
@@ -393,24 +392,18 @@ const removeNewAttachment = (index: number) => {
     form.value.attachments.splice(index, 1);
 };
 
-const removeExistingAttachment = (
-    attachment: ExistingAttachment,
-) => {
-    const alreadyMarked =
-        form.value.remove_attachments.includes(
-            attachment.path,
-        );
+const removeExistingAttachment = (attachment: ExistingAttachment) => {
+    const alreadyMarked = form.value.remove_attachments.includes(
+        attachment.path,
+    );
 
     if (!alreadyMarked) {
-        form.value.remove_attachments.push(
-            attachment.path,
-        );
+        form.value.remove_attachments.push(attachment.path);
     }
 
-    existingAttachments.value =
-        existingAttachments.value.filter(
-            (item) => item.path !== attachment.path,
-        );
+    existingAttachments.value = existingAttachments.value.filter(
+        (item) => item.path !== attachment.path,
+    );
 };
 
 /*
@@ -419,13 +412,10 @@ const removeExistingAttachment = (
 |--------------------------------------------------------------------------
 */
 
-const syncForm = (
-    procurement: Procurement | null | undefined,
-) => {
+const syncForm = (procurement: Procurement | null | undefined) => {
     form.value = procurement
         ? {
-              faculty_id:
-                  Number(procurement.faculty_id) || 0,
+              faculty_id: Number(procurement.faculty_id) || 0,
 
               room_id:
                   procurement.room_id !== null &&
@@ -434,8 +424,7 @@ const syncForm = (
                       ? Number(procurement.room_id)
                       : null,
 
-              item_name:
-                  procurement.item_name ?? "",
+              item_name: procurement.item_name ?? "",
 
               quantity:
                   Number(procurement.quantity) > 0
@@ -447,11 +436,9 @@ const syncForm = (
                       ? "new_item"
                       : "replacement",
 
-              reason:
-                  procurement.reason ?? "",
+              reason: procurement.reason ?? "",
 
-              subject:
-                  procurement.subject ?? "",
+              subject: procurement.subject ?? "",
 
               requester_signature:
                   procurement.requester_signature ?? null,
@@ -462,10 +449,9 @@ const syncForm = (
           }
         : emptyForm();
 
-    existingAttachments.value =
-        procurement?.attachments
-            ? [...procurement.attachments]
-            : [];
+    existingAttachments.value = procurement?.attachments
+        ? [...procurement.attachments]
+        : [];
 };
 
 watch(
@@ -500,20 +486,14 @@ watch(
 watch(
     () => form.value.faculty_id,
     (newFacultyId, oldFacultyId) => {
-        if (
-            oldFacultyId !== undefined &&
-            newFacultyId !== oldFacultyId
-        ) {
+        if (oldFacultyId !== undefined && newFacultyId !== oldFacultyId) {
             const selectedRoom = props.rooms.find(
-                (room) =>
-                    Number(room.id) ===
-                    Number(form.value.room_id),
+                (room) => Number(room.id) === Number(form.value.room_id),
             );
 
             if (
                 selectedRoom &&
-                Number(selectedRoom.faculty_id) !==
-                    Number(newFacultyId)
+                Number(selectedRoom.faculty_id) !== Number(newFacultyId)
             ) {
                 form.value.room_id = null;
             }
@@ -521,7 +501,7 @@ watch(
     },
 );
 
-const availableRooms = () => {
+const availableRooms = computed(() => {
     const facultyId = Number(form.value.faculty_id);
 
     if (!facultyId) {
@@ -529,10 +509,9 @@ const availableRooms = () => {
     }
 
     return props.rooms.filter(
-        (room) =>
-            Number(room.faculty_id) === facultyId,
+        (room) => Number(room.faculty_id) === facultyId,
     );
-};
+});
 
 /*
 |--------------------------------------------------------------------------
@@ -551,38 +530,25 @@ const handleSubmit = () => {
         saveSignature();
     }
 
-    const facultyId = Number(
-        form.value.faculty_id,
-    );
+    const facultyId = Number(form.value.faculty_id);
 
     const roomId =
-        form.value.room_id !== null &&
-        form.value.room_id !== undefined
+        form.value.room_id !== null && form.value.room_id !== undefined
             ? Number(form.value.room_id)
             : null;
 
-    const itemName = String(
-        form.value.item_name ?? "",
-    ).trim();
+    const itemName = String(form.value.item_name ?? "").trim();
 
-    const quantity = Number(
-        form.value.quantity,
-    );
+    const quantity = Number(form.value.quantity);
 
     const type = form.value.type;
 
-    const reason = String(
-        form.value.reason ?? "",
-    ).trim();
+    const reason = String(form.value.reason ?? "").trim();
 
-    const subject =
-        String(form.value.subject ?? "").trim() ||
-        null;
+    const subject = String(form.value.subject ?? "").trim() || null;
 
     const requesterSignature =
-        String(
-            form.value.requester_signature ?? "",
-        ).trim() || null;
+        String(form.value.requester_signature ?? "").trim() || null;
 
     /*
     |--------------------------------------------------------------------------
@@ -591,39 +557,28 @@ const handleSubmit = () => {
     */
 
     if (!facultyId) {
-        errorMessage.value =
-            "Silakan pilih Fakultas terlebih dahulu.";
+        errorMessage.value = "Silakan pilih Fakultas terlebih dahulu.";
 
         return;
     }
 
-    if (
-        roomId === null ||
-        !Number.isInteger(roomId) ||
-        roomId < 1
-    ) {
-        errorMessage.value =
-            "Silakan pilih Ruangan terlebih dahulu.";
+    if (roomId === null || !Number.isInteger(roomId) || roomId < 1) {
+        errorMessage.value = "Silakan pilih Ruangan terlebih dahulu.";
 
         return;
     }
 
     const selectedRoom = props.rooms.find(
-        (room) =>
-            Number(room.id) === Number(roomId),
+        (room) => Number(room.id) === Number(roomId),
     );
 
     if (!selectedRoom) {
-        errorMessage.value =
-            "Ruangan yang dipilih tidak ditemukan.";
+        errorMessage.value = "Ruangan yang dipilih tidak ditemukan.";
 
         return;
     }
 
-    if (
-        Number(selectedRoom.faculty_id) !==
-        facultyId
-    ) {
+    if (Number(selectedRoom.faculty_id) !== facultyId) {
         errorMessage.value =
             "Ruangan tidak sesuai dengan Fakultas yang dipilih.";
 
@@ -631,64 +586,51 @@ const handleSubmit = () => {
     }
 
     if (!itemName) {
-        errorMessage.value =
-            "Nama Barang wajib diisi.";
+        errorMessage.value = "Nama Barang wajib diisi.";
 
         return;
     }
 
     if (itemName.length > 255) {
-        errorMessage.value =
-            "Nama Barang maksimal 255 karakter.";
+        errorMessage.value = "Nama Barang maksimal 255 karakter.";
 
         return;
     }
 
-    if (
-        !Number.isInteger(quantity) ||
-        quantity < 1
-    ) {
+    if (!Number.isFinite(quantity) || !Number.isInteger(quantity) || quantity < 1) {
         errorMessage.value =
             "Jumlah pengadaan harus berupa angka bulat minimal 1.";
 
         return;
     }
 
-    if (
-        type !== "replacement" &&
-        type !== "new_item"
-    ) {
-        errorMessage.value =
-            "Silakan pilih jenis pengadaan.";
+    if (type !== "replacement" && type !== "new_item") {
+        errorMessage.value = "Silakan pilih jenis pengadaan.";
 
         return;
     }
 
     if (!reason) {
-        errorMessage.value =
-            "Alasan Pengadaan wajib diisi.";
+        errorMessage.value = "Alasan Pengadaan wajib diisi.";
 
         return;
     }
 
     if (totalAttachmentCount() > MAX_ATTACHMENTS) {
-        errorMessage.value =
-            `Maksimal ${MAX_ATTACHMENTS} lampiran per pengajuan.`;
+        errorMessage.value = `Maksimal ${MAX_ATTACHMENTS} lampiran per pengajuan.`;
 
         return;
     }
 
     for (const file of form.value.attachments) {
         if (!isAllowedAttachment(file)) {
-            errorMessage.value =
-                `File "${file.name}" harus berformat JPG, PNG, atau PDF.`;
+            errorMessage.value = `File "${file.name}" harus berformat JPG, PNG, atau PDF.`;
 
             return;
         }
 
         if (file.size > MAX_ATTACHMENT_SIZE) {
-            errorMessage.value =
-                `File "${file.name}" melebihi batas maksimal 5MB.`;
+            errorMessage.value = `File "${file.name}" melebihi batas maksimal 5MB.`;
 
             return;
         }
@@ -710,8 +652,7 @@ const handleSubmit = () => {
         subject,
         requester_signature: requesterSignature,
         attachments: form.value.attachments,
-        remove_attachments:
-            form.value.remove_attachments,
+        remove_attachments: form.value.remove_attachments,
     };
 
     emit("submit", payload);
@@ -729,16 +670,64 @@ const handleClose = () => {
     emit("close");
 };
 
+/*
+|--------------------------------------------------------------------------
+| ACCESSIBILITY / UX: ESC TO CLOSE + BODY SCROLL LOCK
+|--------------------------------------------------------------------------
+*/
+
+const handleKeydown = (event: KeyboardEvent) => {
+    if (event.key === "Escape" && props.show) {
+        handleClose();
+    }
+};
+
+let previousBodyOverflow = "";
+
+watch(
+    () => props.show,
+    (isOpen) => {
+        if (typeof document === "undefined") {
+            return;
+        }
+
+        if (isOpen) {
+            previousBodyOverflow = document.body.style.overflow;
+            document.body.style.overflow = "hidden";
+        } else {
+            document.body.style.overflow = previousBodyOverflow;
+        }
+    },
+    { immediate: true },
+);
+
+if (typeof window !== "undefined") {
+    window.addEventListener("keydown", handleKeydown);
+}
+
 onBeforeUnmount(() => {
     canvasContext = null;
     isDrawing.value = false;
+
+    if (typeof window !== "undefined") {
+        window.removeEventListener("keydown", handleKeydown);
+    }
+
+    if (typeof document !== "undefined" && props.show) {
+        document.body.style.overflow = previousBodyOverflow;
+    }
 });
 </script>
 
 <template>
     <div
         v-if="show"
+        ref="modalRoot"
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+        role="dialog"
+        aria-modal="true"
+        :aria-labelledby="dialogTitleId"
+        @click.self="handleClose"
     >
         <div
             class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-black/5 bg-white p-6 shadow-xl dark:border-white/10 dark:bg-[#161615]"
@@ -748,19 +737,17 @@ onBeforeUnmount(() => {
                 class="flex items-center justify-between border-b border-[#e3e3e0] pb-4 dark:border-[#3E3E3A]"
             >
                 <h3
+                    :id="dialogTitleId"
                     class="text-base font-semibold text-[#1b1b18] dark:text-[#EDEDEC]"
                 >
-                    {{
-                        procurement
-                            ? "Edit Pengadaan"
-                            : "Ajukan Pengadaan Baru"
-                    }}
+                    {{ procurement ? "Edit Pengadaan" : "Ajukan Pengadaan Baru" }}
                 </h3>
 
                 <button
                     type="button"
                     @click="handleClose"
                     :disabled="processing"
+                    aria-label="Tutup"
                     class="rounded-lg p-1 text-[#706f6c] transition hover:bg-slate-100 hover:text-[#1b1b18] disabled:cursor-not-allowed disabled:opacity-50 dark:text-[#A1A09A] dark:hover:bg-[#20201e] dark:hover:text-[#EDEDEC]"
                 >
                     <svg
@@ -770,6 +757,7 @@ onBeforeUnmount(() => {
                         stroke-width="1.5"
                         stroke="currentColor"
                         class="h-5 w-5"
+                        aria-hidden="true"
                     >
                         <path
                             stroke-linecap="round"
@@ -780,13 +768,11 @@ onBeforeUnmount(() => {
                 </button>
             </div>
 
-            <form
-                class="mt-4 space-y-4"
-                @submit.prevent="handleSubmit"
-            >
+            <form class="mt-4 space-y-4" @submit.prevent="handleSubmit" novalidate>
                 <!-- ERROR -->
                 <div
                     v-if="errorMessage"
+                    role="alert"
                     class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400"
                 >
                     {{ errorMessage }}
@@ -795,6 +781,7 @@ onBeforeUnmount(() => {
                 <!-- FAKULTAS -->
                 <div>
                     <label
+                        :for="fieldId('faculty')"
                         class="mb-1 block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
                     >
                         Pilih Fakultas
@@ -802,12 +789,10 @@ onBeforeUnmount(() => {
                     </label>
 
                     <select
+                        :id="fieldId('faculty')"
                         v-model="form.faculty_id"
                         required
-                        :disabled="
-                            faculties.length === 0 ||
-                            processing
-                        "
+                        :disabled="faculties.length === 0 || processing"
                         class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2 text-xs text-[#1b1b18] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433] dark:disabled:bg-white/5 dark:disabled:text-[#5c5c58]"
                     >
                         <option value="0">
@@ -823,8 +808,7 @@ onBeforeUnmount(() => {
                             :key="faculty.id"
                             :value="faculty.id"
                         >
-                            {{ faculty.code }} -
-                            {{ faculty.name }}
+                            {{ faculty.code }} - {{ faculty.name }}
                         </option>
                     </select>
 
@@ -832,14 +816,14 @@ onBeforeUnmount(() => {
                         v-if="faculties.length === 0"
                         class="mt-1 text-[11px] font-medium text-amber-600 dark:text-amber-500"
                     >
-                        Silakan input data Fakultas
-                        terlebih dahulu.
+                        Silakan input data Fakultas terlebih dahulu.
                     </p>
                 </div>
 
                 <!-- RUANGAN -->
                 <div>
                     <label
+                        :for="fieldId('room')"
                         class="mb-1 block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
                     >
                         Ruangan
@@ -847,11 +831,12 @@ onBeforeUnmount(() => {
                     </label>
 
                     <select
+                        :id="fieldId('room')"
                         v-model="form.room_id"
                         required
                         :disabled="
                             !form.faculty_id ||
-                            availableRooms().length === 0 ||
+                            availableRooms.length === 0 ||
                             processing
                         "
                         class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2 text-xs text-[#1b1b18] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433] dark:disabled:bg-white/5 dark:disabled:text-[#5c5c58]"
@@ -860,50 +845,43 @@ onBeforeUnmount(() => {
                             {{
                                 !form.faculty_id
                                     ? "-- Pilih Fakultas Dahulu --"
-                                    : availableRooms().length === 0
+                                    : availableRooms.length === 0
                                       ? "Belum ada Ruangan"
                                       : "-- Pilih Ruangan --"
                             }}
                         </option>
 
                         <option
-                            v-for="room in availableRooms()"
+                            v-for="room in availableRooms"
                             :key="room.id"
                             :value="room.id"
                         >
-                            {{ room.code }} -
-                            {{ room.name }}
+                            {{ room.code }} - {{ room.name }}
                         </option>
                     </select>
 
                     <p
-                        v-if="
-                            form.faculty_id &&
-                            availableRooms().length === 0
-                        "
+                        v-if="form.faculty_id && availableRooms.length === 0"
                         class="mt-1 text-[11px] font-medium text-amber-600 dark:text-amber-500"
                     >
-                        Belum ada ruangan untuk
-                        fakultas yang dipilih.
+                        Belum ada ruangan untuk fakultas yang dipilih.
                     </p>
                 </div>
 
                 <!-- NAMA + JUMLAH -->
-                <div
-                    class="grid grid-cols-2 gap-4"
-                >
+                <div class="grid grid-cols-2 gap-4">
                     <!-- NAMA BARANG -->
                     <div>
                         <label
+                            :for="fieldId('item_name')"
                             class="mb-1 block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
                         >
                             Nama Barang
-                            <span
-                                class="text-red-500"
-                            >*</span>
+                            <span class="text-red-500">*</span>
                         </label>
 
                         <input
+                            :id="fieldId('item_name')"
                             v-model="form.item_name"
                             type="text"
                             required
@@ -917,20 +895,21 @@ onBeforeUnmount(() => {
                     <!-- JUMLAH -->
                     <div>
                         <label
+                            :for="fieldId('quantity')"
                             class="mb-1 block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
                         >
                             Jumlah
-                            <span
-                                class="text-red-500"
-                            >*</span>
+                            <span class="text-red-500">*</span>
                         </label>
 
                         <input
+                            :id="fieldId('quantity')"
                             v-model.number="form.quantity"
                             type="number"
                             required
                             min="1"
                             step="1"
+                            inputmode="numeric"
                             placeholder="Contoh: 5"
                             :disabled="processing"
                             class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2 text-xs text-[#1b1b18] placeholder-[#a1a09a] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433]"
@@ -941,6 +920,7 @@ onBeforeUnmount(() => {
                 <!-- JENIS PENGADAAN -->
                 <div>
                     <label
+                        :for="fieldId('type')"
                         class="mb-1 block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
                     >
                         Jenis Pengadaan
@@ -948,19 +928,17 @@ onBeforeUnmount(() => {
                     </label>
 
                     <select
+                        :id="fieldId('type')"
                         v-model="form.type"
                         required
                         :disabled="processing"
                         class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2 text-xs text-[#1b1b18] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433] dark:disabled:bg-white/5 dark:disabled:text-[#5c5c58]"
                     >
                         <option value="replacement">
-                            Penggantian Barang Rusak /
-                            Tidak Layak
+                            Penggantian Barang Rusak / Tidak Layak
                         </option>
 
-                        <option value="new_item">
-                            Pengadaan Barang Baru
-                        </option>
+                        <option value="new_item">Pengadaan Barang Baru</option>
                     </select>
                 </div>
 
@@ -969,13 +947,9 @@ onBeforeUnmount(() => {
                     v-if="form.type === 'replacement'"
                     class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/50 dark:bg-amber-950/20"
                 >
-                    <p
-                        class="text-[11px] leading-relaxed text-amber-700 dark:text-amber-400"
-                    >
-                        Pengadaan ini digunakan
-                        untuk mengganti barang yang
-                        rusak, hilang, atau sudah tidak
-                        layak digunakan.
+                    <p class="text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">
+                        Pengadaan ini digunakan untuk mengganti barang yang
+                        rusak, hilang, atau sudah tidak layak digunakan.
                     </p>
                 </div>
 
@@ -983,11 +957,8 @@ onBeforeUnmount(() => {
                     v-else
                     class="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 dark:border-blue-900/50 dark:bg-blue-950/20"
                 >
-                    <p
-                        class="text-[11px] leading-relaxed text-blue-700 dark:text-blue-400"
-                    >
-                        Pengadaan ini digunakan
-                        untuk menambahkan barang baru
+                    <p class="text-[11px] leading-relaxed text-blue-700 dark:text-blue-400">
+                        Pengadaan ini digunakan untuk menambahkan barang baru
                         ke kebutuhan Fakultas.
                     </p>
                 </div>
@@ -995,17 +966,17 @@ onBeforeUnmount(() => {
                 <!-- PERIHAL -->
                 <div>
                     <label
+                        :for="fieldId('subject')"
                         class="mb-1 block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
                     >
                         Perihal
-                        <span
-                            class="text-[10px] font-normal text-[#a1a09a]"
-                        >
+                        <span class="text-[10px] font-normal text-[#a1a09a]">
                             (opsional)
                         </span>
                     </label>
 
                     <input
+                        :id="fieldId('subject')"
                         v-model="form.subject"
                         type="text"
                         maxlength="255"
@@ -1014,19 +985,16 @@ onBeforeUnmount(() => {
                         class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2 text-xs text-[#1b1b18] placeholder-[#a1a09a] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433]"
                     />
 
-                    <p
-                        class="mt-1 text-[10px] text-[#706f6c] dark:text-[#A1A09A]"
-                    >
-                        Jika dikosongkan, perihal pada
-                        surat akan dibuat otomatis
-                        berdasarkan nama barang dan
-                        jenis pengadaan.
+                    <p class="mt-1 text-[10px] text-[#706f6c] dark:text-[#A1A09A]">
+                        Jika dikosongkan, perihal pada surat akan dibuat
+                        otomatis berdasarkan nama barang dan jenis pengadaan.
                     </p>
                 </div>
 
                 <!-- ALASAN -->
                 <div>
                     <label
+                        :for="fieldId('reason')"
                         class="mb-1 block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
                     >
                         Alasan Pengadaan
@@ -1034,6 +1002,7 @@ onBeforeUnmount(() => {
                     </label>
 
                     <textarea
+                        :id="fieldId('reason')"
                         v-model="form.reason"
                         required
                         rows="4"
@@ -1042,48 +1011,32 @@ onBeforeUnmount(() => {
                         class="w-full resize-none rounded-lg border border-[#e3e3e0] bg-transparent px-3 py-2 text-xs text-[#1b1b18] placeholder-[#a1a09a] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433]"
                     ></textarea>
 
-                    <p
-                        class="mt-1 text-[10px] text-[#706f6c] dark:text-[#A1A09A]"
-                    >
-                        Jelaskan kebutuhan atau kondisi
-                        barang secara jelas untuk
-                        memudahkan proses verifikasi.
+                    <p class="mt-1 text-[10px] text-[#706f6c] dark:text-[#A1A09A]">
+                        Jelaskan kebutuhan atau kondisi barang secara jelas
+                        untuk memudahkan proses verifikasi.
                     </p>
                 </div>
 
                 <!-- LAMPIRAN -->
                 <div>
-                    <div
-                        class="mb-1 flex items-center justify-between"
-                    >
+                    <div class="mb-1 flex items-center justify-between">
                         <label
+                            :for="fieldId('attachments')"
                             class="block text-xs font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
                         >
                             Lampiran
-                            <span
-                                class="text-[10px] font-normal text-[#a1a09a]"
-                            >
+                            <span class="text-[10px] font-normal text-[#a1a09a]">
                                 (opsional)
                             </span>
                         </label>
 
-                        <span
-                            class="text-[10px] text-[#a1a09a]"
-                        >
-                            {{ totalAttachmentCount() }}/{{
-                                MAX_ATTACHMENTS
-                            }}
-                            berkas
+                        <span class="text-[10px] text-[#a1a09a]">
+                            {{ totalAttachmentCount() }}/{{ MAX_ATTACHMENTS }} berkas
                         </span>
                     </div>
 
                     <!-- LAMPIRAN LAMA -->
-                    <ul
-                        v-if="
-                            existingAttachments.length > 0
-                        "
-                        class="mb-2 space-y-1"
-                    >
+                    <ul v-if="existingAttachments.length > 0" class="mb-2 space-y-1">
                         <li
                             v-for="attachment in existingAttachments"
                             :key="attachment.path"
@@ -1092,7 +1045,7 @@ onBeforeUnmount(() => {
                             <a
                                 :href="attachment.url"
                                 target="_blank"
-                                rel="noopener"
+                                rel="noopener noreferrer"
                                 class="truncate text-[#1b1b18] hover:underline dark:text-[#EDEDEC]"
                             >
                                 {{ attachment.name }}
@@ -1101,11 +1054,7 @@ onBeforeUnmount(() => {
                             <button
                                 type="button"
                                 :disabled="processing"
-                                @click="
-                                    removeExistingAttachment(
-                                        attachment,
-                                    )
-                                "
+                                @click="removeExistingAttachment(attachment)"
                                 class="shrink-0 pl-2 text-red-600 hover:underline disabled:opacity-40"
                             >
                                 Hapus
@@ -1114,29 +1063,20 @@ onBeforeUnmount(() => {
                     </ul>
 
                     <!-- FILE BARU -->
-                    <ul
-                        v-if="form.attachments.length > 0"
-                        class="mb-2 space-y-1"
-                    >
+                    <ul v-if="form.attachments.length > 0" class="mb-2 space-y-1">
                         <li
                             v-for="(file, index) in form.attachments"
-                            :key="`${file.name}-${index}`"
+                            :key="`${file.name}-${file.size}-${file.lastModified}`"
                             class="flex items-center justify-between rounded-lg border border-dashed border-[#e3e3e0] px-3 py-1.5 text-xs dark:border-[#3E3E3A]"
                         >
-                            <span
-                                class="truncate text-[#1b1b18] dark:text-[#EDEDEC]"
-                            >
+                            <span class="truncate text-[#1b1b18] dark:text-[#EDEDEC]">
                                 {{ file.name }}
                             </span>
 
                             <button
                                 type="button"
                                 :disabled="processing"
-                                @click="
-                                    removeNewAttachment(
-                                        index,
-                                    )
-                                "
+                                @click="removeNewAttachment(index)"
                                 class="shrink-0 pl-2 text-red-600 hover:underline disabled:opacity-40"
                             >
                                 Batal
@@ -1145,88 +1085,58 @@ onBeforeUnmount(() => {
                     </ul>
 
                     <input
+                        :id="fieldId('attachments')"
                         ref="attachmentInput"
                         type="file"
                         multiple
                         accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
-                        :disabled="
-                            processing ||
-                            totalAttachmentCount() >=
-                                MAX_ATTACHMENTS
-                        "
+                        :disabled="processing || totalAttachmentCount() >= MAX_ATTACHMENTS"
                         @change="handleAttachmentsChange"
                         class="block w-full text-xs text-[#706f6c] file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[#1b1b18] hover:file:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50 dark:text-[#A1A09A] dark:file:bg-[#20201e] dark:file:text-[#EDEDEC]"
                     />
 
-                    <p
-                        class="mt-1 text-[10px] text-[#706f6c] dark:text-[#A1A09A]"
-                    >
-                        Format JPG, PNG, atau PDF.
-                        Maksimal {{ MAX_ATTACHMENTS }}
+                    <p class="mt-1 text-[10px] text-[#706f6c] dark:text-[#A1A09A]">
+                        Format JPG, PNG, atau PDF. Maksimal {{ MAX_ATTACHMENTS }}
                         berkas, masing-masing 5MB.
                     </p>
                 </div>
 
                 <!-- TANDA TANGAN -->
                 <div>
-                    <div
-                        class="mb-2 flex items-center justify-between"
-                    >
-                        <label
-                            class="block text-sm font-medium text-[#1b1b18] dark:text-[#EDEDEC]"
-                        >
+                    <div class="mb-2 flex items-center justify-between">
+                        <span class="block text-sm font-medium text-[#1b1b18] dark:text-[#EDEDEC]">
                             Tanda Tangan Pengaju
-                            <span
-                                class="text-[10px] font-normal text-[#a1a09a]"
-                            >
+                            <span class="text-[10px] font-normal text-[#a1a09a]">
                                 (opsional)
                             </span>
-                        </label>
+                        </span>
 
-                        <span
-                            class="text-xs text-[#706f6c] dark:text-[#A1A09A]"
-                        >
-                            {{
-                                hasSignature
-                                    ? "Sudah ditandatangani"
-                                    : "Belum ditandatangani"
-                            }}
+                        <span class="text-xs text-[#706f6c] dark:text-[#A1A09A]">
+                            {{ hasSignature ? "Sudah ditandatangani" : "Belum ditandatangani" }}
                         </span>
                     </div>
 
                     <div
                         class="overflow-hidden rounded-xl border border-dashed border-black/15 bg-white dark:border-white/15 dark:bg-[#0f0f0e]"
                     >
-                        <div
-                            class="relative w-full"
-                        >
+                        <div class="relative w-full">
                             <canvas
                                 ref="signatureCanvas"
+                                role="img"
+                                aria-label="Kanvas tanda tangan"
                                 class="block h-[180px] w-full touch-none bg-white dark:bg-[#0f0f0e]"
-                                @pointerdown="
-                                    startDrawing
-                                "
-                                @pointermove="
-                                    drawSignature
-                                "
-                                @pointerup="
-                                    stopDrawing
-                                "
-                                @pointercancel="
-                                    stopDrawing
-                                "
-                                @pointerleave="
-                                    stopDrawing
-                                "
+                                @pointerdown="startDrawing"
+                                @pointermove="drawSignature"
+                                @pointerup="stopDrawing"
+                                @pointercancel="stopDrawing"
+                                @pointerleave="stopDrawing"
                             />
 
                             <div
                                 v-if="!hasSignature"
                                 class="pointer-events-none absolute inset-0 flex items-center justify-center"
                             >
-                                <span
-                                    class="text-sm text-[#b0afac] dark:text-[#666560]"
-                                >
+                                <span class="text-sm text-[#b0afac] dark:text-[#666560]">
                                     Tanda tangan di sini
                                 </span>
                             </div>
@@ -1239,20 +1149,13 @@ onBeforeUnmount(() => {
                         <div
                             class="flex items-center justify-between border-t border-black/10 px-4 py-3 dark:border-white/10"
                         >
-                            <p
-                                class="text-xs text-[#706f6c] dark:text-[#A1A09A]"
-                            >
-                                Gunakan mouse atau layar
-                                sentuh untuk tanda
-                                tangan.
+                            <p class="text-xs text-[#706f6c] dark:text-[#A1A09A]">
+                                Gunakan mouse atau layar sentuh untuk tanda tangan.
                             </p>
 
                             <button
                                 type="button"
-                                :disabled="
-                                    processing ||
-                                    !hasSignature
-                                "
+                                :disabled="processing || !hasSignature"
                                 class="rounded-lg px-3 py-2 text-xs font-medium text-[#f53003] transition hover:bg-[#f53003]/10 disabled:cursor-not-allowed disabled:opacity-40"
                                 @click="clearSignature"
                             >
