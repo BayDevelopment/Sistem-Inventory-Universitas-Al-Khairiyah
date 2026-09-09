@@ -2,9 +2,7 @@
 import { Form, Head, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import { login } from '@/routes';
-import { store } from '@/routes/register';
 
-// Bypass & matikan layout bawaan Starter Kit
 defineOptions({
     layout: (h, page) => page,
 });
@@ -13,14 +11,13 @@ defineProps<{
     passwordRules?: string;
 }>();
 
-// State toggle visibilitas password
 const showPassword = ref(false);
+const showPasswordConfirmation = ref(false);
+
 const togglePasswordVisibility = () => {
     showPassword.value = !showPassword.value;
 };
 
-// State toggle visibilitas konfirmasi password
-const showPasswordConfirmation = ref(false);
 const togglePasswordConfirmationVisibility = () => {
     showPasswordConfirmation.value = !showPasswordConfirmation.value;
 };
@@ -36,12 +33,15 @@ const togglePasswordConfirmationVisibility = () => {
             <div
                 class="animate-blob absolute -left-24 -top-24 h-72 w-72 rounded-full bg-[#f53003]/20 blur-3xl dark:bg-[#FF4433]/10 sm:h-96 sm:w-96"
             ></div>
+
             <div
                 class="animate-blob animation-delay-2000 absolute -bottom-24 -right-16 h-72 w-72 rounded-full bg-[#f53003]/10 blur-3xl dark:bg-[#FF4433]/10 sm:h-96 sm:w-96"
             ></div>
+
             <div
                 class="animate-blob animation-delay-4000 absolute left-1/2 top-1/3 h-56 w-56 -translate-x-1/2 rounded-full bg-amber-300/10 blur-3xl dark:bg-amber-500/10 sm:h-72 sm:w-72"
             ></div>
+
             <div
                 class="absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:32px_32px]"
             ></div>
@@ -60,16 +60,22 @@ const togglePasswordConfirmationVisibility = () => {
                         >
                             Buat Akun Baru
                         </h1>
+
                         <p
                             class="mt-2 text-sm text-[#706f6c] dark:text-[#A1A09A]"
                         >
-                            Lengkapi data diri Anda di bawah ini untuk mulai menggunakan Sistem Inventory.
+                            Lengkapi data diri Anda di bawah ini untuk mulai
+                            menggunakan Sistem Inventory.
                         </p>
                     </div>
 
                     <Form
-                        v-bind="store.form()"
-                        :reset-on-success="['password', 'password_confirmation']"
+                        action="/register"
+                        method="post"
+                        :reset-on-success="[
+                            'password',
+                            'password_confirmation',
+                        ]"
                         v-slot="{ errors, processing }"
                         class="space-y-4"
                     >
@@ -80,6 +86,7 @@ const togglePasswordConfirmationVisibility = () => {
                             >
                                 Nama Lengkap
                             </label>
+
                             <div class="mt-1.5">
                                 <input
                                     id="name"
@@ -93,9 +100,10 @@ const togglePasswordConfirmationVisibility = () => {
                                     class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3.5 py-2.5 text-sm text-[#1b1b18] placeholder-[#a1a09a] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433]"
                                 />
                             </div>
+
                             <span
                                 v-if="errors.name"
-                                class="mt-1 text-xs text-red-500"
+                                class="mt-1 block text-xs text-red-500"
                             >
                                 {{ errors.name }}
                             </span>
@@ -108,6 +116,7 @@ const togglePasswordConfirmationVisibility = () => {
                             >
                                 Email Address
                             </label>
+
                             <div class="mt-1.5">
                                 <input
                                     id="email"
@@ -120,9 +129,10 @@ const togglePasswordConfirmationVisibility = () => {
                                     class="w-full rounded-lg border border-[#e3e3e0] bg-transparent px-3.5 py-2.5 text-sm text-[#1b1b18] placeholder-[#a1a09a] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433]"
                                 />
                             </div>
+
                             <span
                                 v-if="errors.email"
-                                class="mt-1 text-xs text-red-500"
+                                class="mt-1 block text-xs text-red-500"
                             >
                                 {{ errors.email }}
                             </span>
@@ -135,22 +145,33 @@ const togglePasswordConfirmationVisibility = () => {
                             >
                                 Password
                             </label>
+
                             <div class="relative mt-1.5">
                                 <input
                                     id="password"
                                     name="password"
-                                    :type="showPassword ? 'text' : 'password'"
+                                    :type="
+                                        showPassword
+                                            ? 'text'
+                                            : 'password'
+                                    "
                                     required
                                     tabindex="3"
                                     autocomplete="new-password"
                                     placeholder="••••••••"
                                     class="w-full rounded-lg border border-[#e3e3e0] bg-transparent py-2.5 pl-3.5 pr-10 text-sm text-[#1b1b18] placeholder-[#a1a09a] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433]"
                                 />
+
                                 <button
                                     type="button"
                                     @click="togglePasswordVisibility"
                                     class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-[#706f6c] hover:text-[#1b1b18] dark:text-[#A1A09A] dark:hover:text-[#EDEDEC]"
                                     tabindex="-1"
+                                    :aria-label="
+                                        showPassword
+                                            ? 'Sembunyikan password'
+                                            : 'Tampilkan password'
+                                    "
                                 >
                                     <svg
                                         v-if="showPassword"
@@ -172,6 +193,7 @@ const togglePasswordConfirmationVisibility = () => {
                                             d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"
                                         />
                                     </svg>
+
                                     <svg
                                         v-else
                                         xmlns="http://www.w3.org/2000/svg"
@@ -189,9 +211,10 @@ const togglePasswordConfirmationVisibility = () => {
                                     </svg>
                                 </button>
                             </div>
+
                             <span
                                 v-if="errors.password"
-                                class="mt-1 text-xs text-red-500"
+                                class="mt-1 block text-xs text-red-500"
                             >
                                 {{ errors.password }}
                             </span>
@@ -204,22 +227,35 @@ const togglePasswordConfirmationVisibility = () => {
                             >
                                 Konfirmasi Password
                             </label>
+
                             <div class="relative mt-1.5">
                                 <input
                                     id="password_confirmation"
                                     name="password_confirmation"
-                                    :type="showPasswordConfirmation ? 'text' : 'password'"
+                                    :type="
+                                        showPasswordConfirmation
+                                            ? 'text'
+                                            : 'password'
+                                    "
                                     required
                                     tabindex="4"
                                     autocomplete="new-password"
                                     placeholder="••••••••"
                                     class="w-full rounded-lg border border-[#e3e3e0] bg-transparent py-2.5 pl-3.5 pr-10 text-sm text-[#1b1b18] placeholder-[#a1a09a] transition focus:border-[#f53003] focus:outline-none focus:ring-1 focus:ring-[#f53003] dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:focus:border-[#FF4433] dark:focus:ring-[#FF4433]"
                                 />
+
                                 <button
                                     type="button"
-                                    @click="togglePasswordConfirmationVisibility"
+                                    @click="
+                                        togglePasswordConfirmationVisibility
+                                    "
                                     class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-[#706f6c] hover:text-[#1b1b18] dark:text-[#A1A09A] dark:hover:text-[#EDEDEC]"
                                     tabindex="-1"
+                                    :aria-label="
+                                        showPasswordConfirmation
+                                            ? 'Sembunyikan konfirmasi password'
+                                            : 'Tampilkan konfirmasi password'
+                                    "
                                 >
                                     <svg
                                         v-if="showPasswordConfirmation"
@@ -241,6 +277,7 @@ const togglePasswordConfirmationVisibility = () => {
                                             d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"
                                         />
                                     </svg>
+
                                     <svg
                                         v-else
                                         xmlns="http://www.w3.org/2000/svg"
@@ -258,9 +295,10 @@ const togglePasswordConfirmationVisibility = () => {
                                     </svg>
                                 </button>
                             </div>
+
                             <span
                                 v-if="errors.password_confirmation"
-                                class="mt-1 text-xs text-red-500"
+                                class="mt-1 block text-xs text-red-500"
                             >
                                 {{ errors.password_confirmation }}
                             </span>
@@ -271,7 +309,7 @@ const togglePasswordConfirmationVisibility = () => {
                             tabindex="5"
                             :disabled="processing"
                             data-test="register-user-button"
-                            class="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#1b1b18] py-2.5 text-center text-sm font-medium text-white transition hover:bg-black focus:outline-none focus:ring-2 focus:ring-[#1b1b18] focus:ring-offset-2 disabled:opacity-50 dark:bg-[#EDEDEC] dark:text-[#1c1c1a] dark:hover:bg-white dark:focus:ring-white"
+                            class="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#1b1b18] py-2.5 text-center text-sm font-medium text-white transition hover:bg-black focus:outline-none focus:ring-2 focus:ring-[#1b1b18] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-[#EDEDEC] dark:text-[#1c1c1a] dark:hover:bg-white dark:focus:ring-white"
                         >
                             <svg
                                 v-if="processing"
@@ -287,14 +325,22 @@ const togglePasswordConfirmationVisibility = () => {
                                     r="10"
                                     stroke="currentColor"
                                     stroke-width="4"
-                                ></circle>
+                                />
+
                                 <path
                                     class="opacity-75"
                                     fill="currentColor"
                                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                ></path>
+                                />
                             </svg>
-                            <span>Daftar Sekarang</span>
+
+                            <span>
+                                {{
+                                    processing
+                                        ? 'Mendaftarkan...'
+                                        : 'Daftar Sekarang'
+                                }}
+                            </span>
                         </button>
                     </Form>
 
@@ -302,6 +348,7 @@ const togglePasswordConfirmationVisibility = () => {
                         class="mt-6 text-center text-xs text-[#706f6c] dark:text-[#A1A09A]"
                     >
                         Sudah memiliki akun?
+
                         <Link
                             :href="login()"
                             tabindex="6"
@@ -334,22 +381,28 @@ const togglePasswordConfirmationVisibility = () => {
                                 />
                             </svg>
                         </div>
+
                         <h2
                             class="mt-4 text-xl font-semibold tracking-tight text-[#1b1b18] dark:text-[#EDEDEC]"
                         >
                             Bergabung Bersama Kami
                         </h2>
+
                         <p
                             class="mt-1 text-sm font-medium text-[#f53003] dark:text-[#FF4433]"
                         >
                             Universitas Al-Khairiyah
                         </p>
+
                         <p
                             class="mt-2 text-xs leading-relaxed text-[#706f6c] dark:text-[#A1A09A]"
                         >
-                            Daftarkan akun Anda untuk mengakses fasilitas peminjaman barang dan pemantauan inventaris kampus secara real-time.
+                            Daftarkan akun Anda untuk mengakses fasilitas
+                            peminjaman barang dan pemantauan inventaris kampus
+                            secara real-time.
                         </p>
                     </div>
+
                     <div
                         class="absolute -bottom-10 -right-10 h-48 w-48 rounded-full bg-[#f53003]/20 blur-3xl dark:bg-[#FF4433]/20"
                     ></div>
@@ -365,9 +418,11 @@ const togglePasswordConfirmationVisibility = () => {
     100% {
         transform: translate(0, 0) scale(1);
     }
+
     33% {
         transform: translate(20px, -30px) scale(1.1);
     }
+
     66% {
         transform: translate(-15px, 15px) scale(0.95);
     }

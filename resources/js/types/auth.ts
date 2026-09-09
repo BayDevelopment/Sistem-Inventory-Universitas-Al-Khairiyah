@@ -14,6 +14,10 @@ export type Auth = {
     user: User;
 };
 
+export type SharedData = {
+    auth: Auth;
+};
+
 export type Passkey = {
     id: number;
     name: string;
