@@ -6,6 +6,7 @@ use App\Http\Controllers\FacultyController;
 use App\Http\Controllers\ItemCategoryController;
 use App\Http\Controllers\ItemController;
 use App\Http\Controllers\ProcurementController;
+use App\Http\Controllers\ProcurementPdfController;
 use App\Http\Controllers\RoomController;
 use App\Http\Controllers\RoomInventoryController;
 use App\Http\Controllers\RoomTypeController;
@@ -87,6 +88,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
             Route::get('/procurements/{procurement}/print', [ProcurementController::class, 'print'])
                 ->name('procurements.print');
+
+            Route::get('/procurements/{procurement}/pdf', [ProcurementPdfController::class, 'pdf'])
+                ->name('procurements.pdf');
         });
 
 

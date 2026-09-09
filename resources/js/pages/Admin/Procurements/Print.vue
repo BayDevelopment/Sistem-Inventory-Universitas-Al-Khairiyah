@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { Head, router } from "@inertiajs/vue3";
 
 /*
@@ -421,68 +421,16 @@ function goBack() {
 
 /*
 |--------------------------------------------------------------------------
-| Print
+| Print (Server-side PDF via dompdf)
 |--------------------------------------------------------------------------
 */
-
-const printTriggered = ref(false);
-
-let printFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
 function printDocument() {
-    if (printTriggered.value) {
-        return;
-    }
-
-    if (typeof window === "undefined") {
-        return;
-    }
-
-    printTriggered.value = true;
-
-    window.print();
-
-    printFallbackTimer = setTimeout(() => {
-        printTriggered.value = false;
-        printFallbackTimer = null;
-    }, 3000);
+    window.open(
+        route("admin.procurements.pdf", props.procurement.id),
+        "_blank"
+    );
 }
-
-function handleBeforePrint() {
-    printTriggered.value = true;
-}
-
-function handleAfterPrint() {
-    printTriggered.value = false;
-
-    if (printFallbackTimer) {
-        clearTimeout(printFallbackTimer);
-        printFallbackTimer = null;
-    }
-}
-
-/*
-|--------------------------------------------------------------------------
-| Lifecycle
-|--------------------------------------------------------------------------
-*/
-
-onMounted(() => {
-    window.addEventListener("beforeprint", handleBeforePrint);
-
-    window.addEventListener("afterprint", handleAfterPrint);
-});
-
-onBeforeUnmount(() => {
-    window.removeEventListener("beforeprint", handleBeforePrint);
-
-    window.removeEventListener("afterprint", handleAfterPrint);
-
-    if (printFallbackTimer) {
-        clearTimeout(printFallbackTimer);
-        printFallbackTimer = null;
-    }
-});
 </script>
 
 <template>
@@ -541,8 +489,7 @@ onBeforeUnmount(() => {
             <button
                 type="button"
                 @click="printDocument"
-                :disabled="printTriggered"
-                class="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#1b1b18] px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-black active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-[#1b1b18] dark:hover:bg-slate-200"
+                class="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#1b1b18] px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-black active:scale-[0.98] dark:bg-white dark:text-[#1b1b18] dark:hover:bg-slate-200"
             >
                 <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -559,9 +506,7 @@ onBeforeUnmount(() => {
                     />
                 </svg>
 
-                <span>
-                    {{ printTriggered ? "Menyiapkan..." : "Cetak Dokumen" }}
-                </span>
+                <span>Cetak Dokumen</span>
             </button>
         </div>
 
@@ -598,13 +543,11 @@ onBeforeUnmount(() => {
                          Letterhead
                     =================================================== -->
 
-                    <header
-                        class="letterhead mb-6 border-b-2 pb-4"
-                    >
+                    <header class="letterhead mb-6">
                         <img
                             :src="activeLetterheadUrl"
                             alt="Kop surat"
-                            class="letterhead-image mx-auto block h-auto w-full object-contain object-center"
+                            class="letterhead-image mx-auto block h-auto object-contain object-center"
                             @error="handleLetterheadError"
                         />
                     </header>
@@ -1100,8 +1043,17 @@ body {
 |--------------------------------------------------------------------------
 */
 
+.letterhead {
+    margin-left: -10mm;
+    margin-right: -10mm;
+    display: flex;
+    justify-content: center;
+}
+
 .letterhead-image {
-    max-width: 100%;
+    width: calc(100% + 20mm);
+    max-width: none;
+    min-height: 34mm;
 }
 
 /*
@@ -1487,11 +1439,13 @@ body {
 
     .letterhead {
         margin-bottom: 18px;
-        padding-bottom: 12px;
+        margin-left: -13px;
+        margin-right: -13px;
     }
 
     .letterhead-image {
-        max-height: 32mm;
+        width: calc(100% + 26px);
+        max-height: 45mm;
     }
 
     .document-title {
@@ -1600,13 +1554,13 @@ body {
 @media print {
     @page {
         size: A4;
-        margin: 0;
+        margin: 15mm 12mm;
     }
 
     html,
     body {
-        width: 210mm;
-        min-width: 210mm;
+        width: auto;
+        min-width: 0;
         margin: 0;
         padding: 0;
         background: #ffffff !important;
@@ -1618,8 +1572,8 @@ body {
     }
 
     .print-page {
-        width: 210mm;
-        min-height: 297mm;
+        width: auto;
+        min-height: 0;
         margin: 0;
         padding: 0;
         overflow: visible;
@@ -1627,8 +1581,8 @@ body {
     }
 
     .a4-page {
-        width: 210mm;
-        min-height: 297mm;
+        width: 100%;
+        min-height: 0;
         margin: 0;
         padding: 0;
         border-radius: 0 !important;
@@ -1637,8 +1591,13 @@ body {
         background: #ffffff !important;
     }
 
+    .letterhead-image {
+        min-height: 42mm;
+    }
+
     .document-content {
         width: 100%;
+        padding: 0;
     }
 
     .print-hidden,
@@ -1646,28 +1605,16 @@ body {
         display: none !important;
     }
 
-    /*
-    | Sections
-    */
-
     .document-section {
         margin-top: 7mm;
         break-inside: avoid;
         page-break-inside: avoid;
     }
 
-    /*
-    | Keep headings with content
-    */
-
     .section-heading {
         break-after: avoid;
         page-break-after: avoid;
     }
-
-    /*
-    | Tables
-    */
 
     table {
         width: 100%;
@@ -1693,10 +1640,6 @@ body {
         page-break-inside: avoid;
     }
 
-    /*
-    | Signature
-    */
-
     .signature-grid {
         display: grid !important;
         grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
@@ -1708,17 +1651,9 @@ body {
         page-break-inside: avoid;
     }
 
-    /*
-    | Detail
-    */
-
     .detail-row {
         grid-template-columns: 155px minmax(0, 1fr);
     }
-
-    /*
-    | Table wrapper
-    */
 
     .document-table-wrapper {
         width: 100%;
@@ -1729,10 +1664,6 @@ body {
         min-width: 0 !important;
     }
 
-    /*
-    | Text
-    */
-
     p,
     h1,
     h2,
@@ -1741,10 +1672,6 @@ body {
         orphans: 3;
         widows: 3;
     }
-
-    /*
-    | Avoid awkward split
-    */
 
     .reason-box,
     .note-box,
@@ -1755,20 +1682,8 @@ body {
         page-break-inside: avoid;
     }
 
-    /*
-    | Print typography
-    */
-
     .document-title h1 {
         font-size: 25px;
-    }
-
-    /*
-    | Remove screen responsive constraints
-    */
-
-    .document-content {
-        padding: 8mm 10mm 7mm;
     }
 }
 </style>
