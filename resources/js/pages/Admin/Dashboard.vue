@@ -1,4 +1,3 @@
-```vue
 <script setup lang="ts">
 import { ref } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
@@ -557,4 +556,3 @@ const executeDelete = () => {
         </div>
     </div>
 </template>
-```

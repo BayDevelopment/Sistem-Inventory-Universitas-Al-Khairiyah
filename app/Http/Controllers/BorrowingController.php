@@ -42,51 +42,41 @@ class BorrowingController extends Controller
         Gate::authorize('viewAny', Borrowing::class);
 
         /*
-        |--------------------------------------------------------------------------
-        | Data Peminjaman
-        |--------------------------------------------------------------------------
-        */
+    |--------------------------------------------------------------------------
+    | Data Peminjaman
+    |--------------------------------------------------------------------------
+    */
 
         $borrowingsQuery = Borrowing::query()
             ->with([
                 'user:id,name,email',
-
                 'faculty:id,name,code',
-
                 'roomInventory:id,room_id,item_id,asset_code,condition,is_borrowable',
-
                 'roomInventory.room:id,name,code,faculty_id,is_active',
-
                 'roomInventory.item:id,name',
-
                 'approver:id,name,email',
             ])
             ->latest('id');
 
         /*
-        |--------------------------------------------------------------------------
-        | Scope Peminjaman Berdasarkan Role
-        |--------------------------------------------------------------------------
-        */
+    |--------------------------------------------------------------------------
+    | Scope Peminjaman Berdasarkan Role
+    |--------------------------------------------------------------------------
+    |
+    | - super_admin         : lihat SEMUA data, lintas fakultas.
+    | - admin_fakultas & sdm: hanya peminjaman fakultasnya sendiri.
+    |   (sdm read-only, lihat Gate 'create' & authorizeApprovalRole()
+    |   yang tidak mengizinkan sdm create/approve/reject/return/cancel).
+    | - dosen/mahasiswa     : hanya peminjaman miliknya sendiri.
+    |--------------------------------------------------------------------------
+    */
 
         if ($user->role === 'super_admin') {
-            // Semua data.
-        } elseif ($user->role === 'admin_fakultas') {
-            $borrowingsQuery->where(
-                'faculty_id',
-                $user->faculty_id
-            );
-        } elseif (
-            in_array(
-                $user->role,
-                ['dosen', 'mahasiswa'],
-                true
-            )
-        ) {
-            $borrowingsQuery->where(
-                'user_id',
-                $user->id
-            );
+            // Tidak difilter.
+        } elseif (in_array($user->role, ['admin_fakultas', 'sdm'], true)) {
+            $borrowingsQuery->where('faculty_id', $user->faculty_id);
+        } elseif (in_array($user->role, ['dosen', 'mahasiswa'], true)) {
+            $borrowingsQuery->where('user_id', $user->id);
         } else {
             $borrowingsQuery->whereRaw('1 = 0');
         }
@@ -94,160 +84,110 @@ class BorrowingController extends Controller
         $borrowings = $borrowingsQuery->get();
 
         /*
-        |--------------------------------------------------------------------------
-        | Data Fakultas
-        |--------------------------------------------------------------------------
-        */
+    |--------------------------------------------------------------------------
+    | Data Fakultas
+    |--------------------------------------------------------------------------
+    |
+    | - super_admin              : semua fakultas.
+    | - admin_fakultas/sdm       : fakultas sendiri saja.
+    | - dosen/mahasiswa          : fakultas sendiri saja (untuk auto-isi
+    |                              faculty_id di form pengajuan).
+    |--------------------------------------------------------------------------
+    */
 
         $facultiesQuery = Faculty::query()
-            ->select([
-                'id',
-                'name',
-                'code',
-            ])
+            ->select(['id', 'name', 'code'])
             ->orderBy('name');
 
-        if ($user->role === 'admin_fakultas') {
-            $facultiesQuery->whereKey(
-                $user->faculty_id
-            );
-        } elseif ($user->role !== 'super_admin') {
+        if ($user->role === 'super_admin') {
+            // Tidak difilter.
+        } elseif (
+            in_array($user->role, ['admin_fakultas', 'sdm'], true)
+            || in_array($user->role, ['dosen', 'mahasiswa'], true)
+        ) {
+            $facultiesQuery->whereKey($user->faculty_id);
+        } else {
             $facultiesQuery->whereRaw('1 = 0');
         }
 
         $faculties = $facultiesQuery->get();
 
-
         $availabilityValidated = $request->validate([
-            'borrow_date' => [
-                'nullable',
-                'date',
-            ],
-
-            'expected_return_date' => [
-                'nullable',
-                'date',
-                'after_or_equal:borrow_date',
-            ],
+            'borrow_date' => ['nullable', 'date'],
+            'expected_return_date' => ['nullable', 'date', 'after_or_equal:borrow_date'],
         ]);
 
-        $borrowDate =
-            $availabilityValidated['borrow_date']
-            ?? null;
+        $borrowDate = $availabilityValidated['borrow_date'] ?? null;
+        $expectedReturnDate = $availabilityValidated['expected_return_date'] ?? null;
 
-        $expectedReturnDate =
-            $availabilityValidated['expected_return_date']
-            ?? null;
+        /*
+    |--------------------------------------------------------------------------
+    | Data Inventaris yang Bisa Dipinjam
+    |--------------------------------------------------------------------------
+    |
+    | - super_admin              : semua inventaris borrowable, lintas fakultas.
+    | - admin_fakultas/sdm       : inventaris fakultasnya saja.
+    | - dosen/mahasiswa          : inventaris fakultasnya saja (untuk dipilih
+    |                              saat mengajukan/mengedit peminjaman).
+    |--------------------------------------------------------------------------
+    */
 
         $roomInventoriesQuery = RoomInventory::query()
-            ->with([
-                'room:id,name,code,faculty_id,is_active',
-                'item:id,name',
-            ])
-            ->select([
-                'id',
-                'room_id',
-                'item_id',
-                'asset_code',
-                'condition',
-                'is_borrowable',
-            ])
-            ->where(
-                'is_borrowable',
-                true
-            )
-            ->where(
-                'condition',
-                '!=',
-                'damaged_heavy'
-            )
-            ->whereHas(
-                'room',
-                function ($query) {
-                    $query->where(
-                        'is_active',
-                        true
-                    );
-                }
-            );
+            ->with(['room:id,name,code,faculty_id,is_active', 'item:id,name'])
+            ->select(['id', 'room_id', 'item_id', 'asset_code', 'condition', 'is_borrowable'])
+            ->where('is_borrowable', true)
+            ->where('condition', '!=', 'damaged_heavy')
+            ->whereHas('room', function ($query) {
+                $query->where('is_active', true);
+            });
 
-        /*
-        |--------------------------------------------------------------------------
-        | Scope Inventaris Berdasarkan Fakultas
-        |--------------------------------------------------------------------------
-        */
-
-        if ($user->role === 'admin_fakultas') {
-            $roomInventoriesQuery->whereHas(
-                'room',
-                function ($query) use ($user) {
-                    $query
-                        ->where(
-                            'faculty_id',
-                            $user->faculty_id
-                        )
-                        ->where(
-                            'is_active',
-                            true
-                        );
-                }
-            );
-        } elseif (
-            in_array(
-                $user->role,
-                ['dosen', 'mahasiswa'],
-                true
-            )
-            && $user->faculty_id
+        if (
+            in_array($user->role, ['admin_fakultas', 'sdm'], true)
+            || (in_array($user->role, ['dosen', 'mahasiswa'], true) && $user->faculty_id)
         ) {
-            $roomInventoriesQuery->whereHas(
-                'room',
-                function ($query) use ($user) {
-                    $query
-                        ->where(
-                            'faculty_id',
-                            $user->faculty_id
-                        )
-                        ->where(
-                            'is_active',
-                            true
-                        );
-                }
-            );
+            $roomInventoriesQuery->whereHas('room', function ($query) use ($user) {
+                $query->where('faculty_id', $user->faculty_id)->where('is_active', true);
+            });
         }
+        // super_admin: sengaja tidak difilter — lihat semua inventaris lintas fakultas.
 
-        $roomInventories =
-            $roomInventoriesQuery
-            ->orderBy('asset_code')
-            ->get();
+        $roomInventories = $roomInventoriesQuery->orderBy('asset_code')->get();
 
         /*
-        |--------------------------------------------------------------------------
-        | Render
-        |--------------------------------------------------------------------------
-        */
+    |--------------------------------------------------------------------------
+    | Render
+    |--------------------------------------------------------------------------
+    |
+    | dosen/mahasiswa                     -> halaman self-service.
+    | super_admin/admin_fakultas/sdm      -> halaman admin
+    |                                        (sdm = read-only, faculty-scoped).
+    |--------------------------------------------------------------------------
+    */
+
+        $isSelfServiceRole = in_array($user->role, ['dosen', 'mahasiswa'], true);
 
         return Inertia::render(
-            'Admin/Borrowings/Index',
+            $isSelfServiceRole ? 'Users/Borrowings/Index' : 'Admin/Borrowings/Index',
             [
-                'borrowings' =>
-                $borrowings,
+                'borrowings' => $borrowings,
 
-                'faculties' =>
-                $faculties,
+                'faculties' => $faculties,
 
-                'roomInventories' =>
-                $roomInventories,
+                'roomInventories' => $roomInventories,
 
-                'canDelete' =>
-                $user->role === 'super_admin',
+                'canDelete' => $user->role === 'super_admin',
+
+                // Dipakai Admin/Borrowings/Index.vue untuk sembunyikan
+                // tombol approve/reject/return/cancel dari role 'sdm'.
+                'canManageWorkflow' => in_array(
+                    $user->role,
+                    ['super_admin', 'admin_fakultas'],
+                    true
+                ),
 
                 'availability' => [
-                    'borrow_date' =>
-                    $borrowDate,
-
-                    'expected_return_date' =>
-                    $expectedReturnDate,
+                    'borrow_date' => $borrowDate,
+                    'expected_return_date' => $expectedReturnDate,
                 ],
             ]
         );
@@ -484,811 +424,167 @@ class BorrowingController extends Controller
 
         abort_unless($user, 401);
 
-        Gate::authorize(
-            'update',
-            $borrowing
-        );
+        Gate::authorize('update', $borrowing);
 
         /*
-        |--------------------------------------------------------------------------
-        | Workflow Action
-        |--------------------------------------------------------------------------
-        */
+    |--------------------------------------------------------------------------
+    | Workflow Action
+    |--------------------------------------------------------------------------
+    */
 
         if ($request->has('status')) {
-            return $this->processWorkflow(
-                $request,
-                $borrowing,
-                $user
-            );
+            return $this->processWorkflow($request, $borrowing, $user);
         }
 
         /*
-        |--------------------------------------------------------------------------
-        | EDIT BIASA
-        |--------------------------------------------------------------------------
-        */
+    |--------------------------------------------------------------------------
+    | EDIT BIASA
+    |--------------------------------------------------------------------------
+    */
 
         if (
             in_array(
                 $borrowing->status,
-                [
-                    'approved',
-                    'borrowed',
-                    'returned',
-                    'cancelled',
-                ],
+                ['approved', 'borrowed', 'returned', 'cancelled'],
                 true
             )
         ) {
             throw ValidationException::withMessages([
-                'borrowing' =>
-                'Peminjaman yang sudah diproses tidak dapat diedit.',
+                'borrowing' => 'Peminjaman yang sudah diproses tidak dapat diedit.',
             ]);
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | Validasi Request
-        |--------------------------------------------------------------------------
-        */
-
         $validated = $request->validate([
-            'faculty_id' => [
-                'required',
-                'integer',
-                'exists:faculties,id',
-            ],
-
-            'room_inventory_id' => [
-                'required',
-                'integer',
-                'exists:room_inventories,id',
-            ],
-
-            'borrow_date' => [
-                'required',
-                'date',
-            ],
-
-            'expected_return_date' => [
-                'required',
-                'date',
-                'after_or_equal:borrow_date',
-            ],
-
-            'purpose' => [
-                'required',
-                'string',
-                'max:1000',
-            ],
-
-            'applicant_signature' => [
-                'nullable',
-                'string',
-                'max:3000000',
-            ],
+            'faculty_id' => ['required', 'integer', 'exists:faculties,id'],
+            'room_inventory_id' => ['required', 'integer', 'exists:room_inventories,id'],
+            'borrow_date' => ['required', 'date'],
+            'expected_return_date' => ['required', 'date', 'after_or_equal:borrow_date'],
+            'purpose' => ['required', 'string', 'max:1000'],
+            'applicant_signature' => ['nullable', 'string', 'max:3000000'],
         ]);
 
-        /*
-        |--------------------------------------------------------------------------
-        | Validasi Fakultas
-        |--------------------------------------------------------------------------
-        */
-
-        $this->validateFacultyAccess(
-            $user,
-            (int) $validated['faculty_id']
-        );
+        $this->validateFacultyAccess($user, (int) $validated['faculty_id']);
 
         $newSignaturePath = null;
         $oldSignaturePath = null;
 
         try {
-            DB::transaction(
-                function () use (
-                    $borrowing,
-                    $validated,
-                    $user,
-                    &$newSignaturePath,
-                    &$oldSignaturePath
-                ) {
-                    /*
-                    |--------------------------------------------------------------------------
-                    | Lock Borrowing
-                    |--------------------------------------------------------------------------
-                    */
+            DB::transaction(function () use (
+                $borrowing,
+                $validated,
+                $user,
+                &$newSignaturePath,
+                &$oldSignaturePath
+            ) {
+                /*
+            |--------------------------------------------------------------------------
+            | Lock Borrowing
+            |--------------------------------------------------------------------------
+            */
 
-                    $lockedBorrowing =
-                        Borrowing::query()
-                        ->whereKey(
-                            $borrowing->id
-                        )
-                        ->lockForUpdate()
-                        ->first();
+                $lockedBorrowing = Borrowing::query()
+                    ->whereKey($borrowing->id)
+                    ->lockForUpdate()
+                    ->first();
 
-                    if (!$lockedBorrowing) {
-                        throw ValidationException::withMessages([
-                            'borrowing' =>
-                            'Data peminjaman tidak ditemukan.',
-                        ]);
-                    }
-
-                    if (
-                        $lockedBorrowing->status
-                        !== self::PENDING_STATUS
-                    ) {
-                        throw ValidationException::withMessages([
-                            'borrowing' =>
-                            'Peminjaman yang sudah diproses tidak dapat diedit.',
-                        ]);
-                    }
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | Lock Inventory
-                    |--------------------------------------------------------------------------
-                    */
-
-                    $roomInventory =
-                        RoomInventory::query()
-                        ->with([
-                            'room:id,name,code,faculty_id,is_active',
-                            'item:id,name',
-                        ])
-                        ->whereKey(
-                            $validated['room_inventory_id']
-                        )
-                        ->lockForUpdate()
-                        ->first();
-
-                    if (!$roomInventory) {
-                        throw ValidationException::withMessages([
-                            'room_inventory_id' =>
-                            'Inventaris tidak ditemukan.',
-                        ]);
-                    }
-
-                    $this->validateBorrowableInventory(
-                        $roomInventory
-                    );
-
-                    $this->validateInventoryFacultyAccess(
-                        $user,
-                        $roomInventory
-                    );
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | Pending lain tidak menjadi blocker.
-                    |
-                    | Hanya approved / borrowed yang dicek.
-                    |--------------------------------------------------------------------------
-                    */
-
-                    $this->ensureInventoryAvailableForNewRequest(
-                        (int) $roomInventory->id,
-                        $validated['borrow_date'],
-                        $validated['expected_return_date'],
-                        (int) $lockedBorrowing->id
-                    );
-
-                    $data = [
-                        'faculty_id' =>
-                        $validated['faculty_id'],
-
-                        'room_inventory_id' =>
-                        $roomInventory->id,
-
-                        'borrow_date' =>
-                        $validated['borrow_date'],
-
-                        'expected_return_date' =>
-                        $validated['expected_return_date'],
-
-                        'purpose' =>
-                        trim(
-                            $validated['purpose']
-                        ),
-                    ];
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | Signature Baru
-                    |--------------------------------------------------------------------------
-                    */
-
-                    if (
-                        !empty($validated['applicant_signature'])
-                    ) {
-                        $newSignaturePath =
-                            $this->storeSignature(
-                                $validated['applicant_signature'],
-                                'applicant_signature'
-                            );
-
-                        $oldSignaturePath =
-                            $lockedBorrowing
-                            ->applicant_signature;
-
-                        $data['applicant_signature'] = $newSignaturePath;
-
-                        $data['signed_at'] = now();
-                    }
-
-                    $lockedBorrowing->update(
-                        $data
-                    );
+                if (!$lockedBorrowing) {
+                    throw ValidationException::withMessages([
+                        'borrowing' => 'Data peminjaman tidak ditemukan.',
+                    ]);
                 }
-            );
+
+                if (
+                    !in_array(
+                        $lockedBorrowing->status,
+                        [self::PENDING_STATUS, 'rejected'],
+                        true
+                    )
+                ) {
+                    throw ValidationException::withMessages([
+                        'borrowing' => 'Peminjaman yang sudah diproses tidak dapat diedit.',
+                    ]);
+                }
+
+                // Ditentukan di sini, dipakai nanti setelah $data dibuat.
+                $isResubmit = $lockedBorrowing->status === 'rejected';
+
+                /*
+            |--------------------------------------------------------------------------
+            | Lock Inventory
+            |--------------------------------------------------------------------------
+            */
+
+                $roomInventory = RoomInventory::query()
+                    ->with(['room:id,name,code,faculty_id,is_active', 'item:id,name'])
+                    ->whereKey($validated['room_inventory_id'])
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$roomInventory) {
+                    throw ValidationException::withMessages([
+                        'room_inventory_id' => 'Inventaris tidak ditemukan.',
+                    ]);
+                }
+
+                $this->validateBorrowableInventory($roomInventory);
+                $this->validateInventoryFacultyAccess($user, $roomInventory);
+
+                $this->ensureInventoryAvailableForNewRequest(
+                    (int) $roomInventory->id,
+                    $validated['borrow_date'],
+                    $validated['expected_return_date'],
+                    (int) $lockedBorrowing->id
+                );
+
+                $data = [
+                    'faculty_id' => $validated['faculty_id'],
+                    'room_inventory_id' => $roomInventory->id,
+                    'borrow_date' => $validated['borrow_date'],
+                    'expected_return_date' => $validated['expected_return_date'],
+                    'purpose' => trim($validated['purpose']),
+                ];
+
+                // Resubmit: rejected -> pending lagi, hapus catatan penolakan lama.
+                if ($isResubmit) {
+                    $data['status'] = self::PENDING_STATUS;
+                    $data['rejection_note'] = null;
+                }
+
+                /*
+            |--------------------------------------------------------------------------
+            | Signature Baru
+            |--------------------------------------------------------------------------
+            */
+
+                if (!empty($validated['applicant_signature'])) {
+                    $newSignaturePath = $this->storeSignature(
+                        $validated['applicant_signature'],
+                        'applicant_signature'
+                    );
+
+                    $oldSignaturePath = $lockedBorrowing->applicant_signature;
+                    $data['applicant_signature'] = $newSignaturePath;
+                    $data['signed_at'] = now();
+                }
+
+                $lockedBorrowing->update($data);
+            });
         } catch (\Throwable $e) {
             if ($newSignaturePath) {
-                Storage::disk('public')->delete(
-                    $newSignaturePath
-                );
+                Storage::disk('public')->delete($newSignaturePath);
             }
 
             throw $e;
         }
 
         if ($oldSignaturePath) {
-            Storage::disk('public')->delete(
-                $oldSignaturePath
-            );
+            Storage::disk('public')->delete($oldSignaturePath);
         }
 
-        return redirect()
-            ->back()
-            ->with(
-                'toast',
-                [
-                    'type' =>
-                    'success',
-
-                    'message' =>
-                    'Data peminjaman berhasil diperbarui.',
-                ]
-            );
-    }
-
-    /**
-     * Process approval / rejection / return / cancellation.
-     */
-    private function processWorkflow(
-        Request $request,
-        Borrowing $borrowing,
-        $user
-    ) {
-        $validated = $request->validate([
-            'status' => [
-                'required',
-                'in:approved,rejected,returned,cancelled',
-            ],
-
-            'rejection_note' => [
-                'nullable',
-                'string',
-                'max:2000',
-            ],
-
-            'actual_return_date' => [
-                'nullable',
-                'date',
-            ],
-
-            'condition' => [
-                'nullable',
-                'in:good,damaged_light,damaged_heavy',
-            ],
-
-            'approver_signature' => [
-                'nullable',
-                'string',
-                'max:3000000',
-            ],
+        return redirect()->back()->with('toast', [
+            'type' => 'success',
+            'message' => 'Data peminjaman berhasil diperbarui.',
         ]);
-
-        $status =
-            $validated['status'];
-
-        if ($status === 'approved') {
-            return $this->approveBorrowing(
-                $request,
-                $borrowing,
-                $user,
-                $validated
-            );
-        }
-
-        if ($status === 'rejected') {
-            return $this->rejectBorrowing(
-                $request,
-                $borrowing,
-                $user,
-                $validated
-            );
-        }
-
-        if ($status === 'returned') {
-            return $this->returnBorrowing(
-                $request,
-                $borrowing,
-                $user,
-                $validated
-            );
-        }
-
-        if ($status === 'cancelled') {
-            return $this->cancelBorrowing(
-                $request,
-                $borrowing,
-                $user
-            );
-        }
-
-        throw ValidationException::withMessages([
-            'status' =>
-            'Status peminjaman tidak valid.',
-        ]);
-    }
-
-    /**
-     * Approve borrowing.
-     *
-     * Ketika satu borrowing di-approve:
-     *
-     * 1. Inventory dikunci.
-     * 2. Borrowing dikunci.
-     * 3. Dicek apakah ada approved/borrowed yang overlap.
-     * 4. Jika aman -> approve.
-     * 5. Semua pending lain yang overlap -> otomatis rejected.
-     */
-    private function approveBorrowing(
-        Request $request,
-        Borrowing $borrowing,
-        $user,
-        array $validated
-    ) {
-        $this->authorizeApprovalRole(
-            $user
-        );
-
-        $approverSignaturePath = null;
-
-        try {
-            DB::transaction(
-                function () use (
-                    $borrowing,
-                    $user,
-                    $validated,
-                    &$approverSignaturePath
-                ) {
-                    /*
-                    |--------------------------------------------------------------------------
-                    | Lock Borrowing
-                    |--------------------------------------------------------------------------
-                    */
-
-                    $lockedBorrowing =
-                        Borrowing::query()
-                        ->whereKey(
-                            $borrowing->id
-                        )
-                        ->lockForUpdate()
-                        ->first();
-
-                    if (!$lockedBorrowing) {
-                        throw ValidationException::withMessages([
-                            'borrowing' =>
-                            'Data peminjaman tidak ditemukan.',
-                        ]);
-                    }
-
-                    if (
-                        $lockedBorrowing->status
-                        !== self::PENDING_STATUS
-                    ) {
-                        throw ValidationException::withMessages([
-                            'status' =>
-                            'Hanya peminjaman dengan status menunggu yang dapat disetujui.',
-                        ]);
-                    }
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | Admin Fakultas hanya boleh approve fakultas sendiri
-                    |--------------------------------------------------------------------------
-                    */
-
-                    $this->validateApprovalFacultyAccess(
-                        $user,
-                        $lockedBorrowing
-                    );
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | Lock Inventory
-                    |--------------------------------------------------------------------------
-                    */
-
-                    $roomInventory =
-                        RoomInventory::query()
-                        ->with([
-                            'room:id,name,code,faculty_id,is_active',
-                            'item:id,name',
-                        ])
-                        ->whereKey(
-                            $lockedBorrowing
-                                ->room_inventory_id
-                        )
-                        ->lockForUpdate()
-                        ->first();
-
-                    if (!$roomInventory) {
-                        throw ValidationException::withMessages([
-                            'room_inventory_id' =>
-                            'Inventaris peminjaman tidak ditemukan.',
-                        ]);
-                    }
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | Inventory harus tetap layak
-                    |--------------------------------------------------------------------------
-                    */
-
-                    $this->validateBorrowableInventory(
-                        $roomInventory
-                    );
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | Cek Approved / Borrowed yang overlap
-                    |--------------------------------------------------------------------------
-                    |
-                    | Pending TIDAK ikut dianggap konflik di sini.
-                    |--------------------------------------------------------------------------
-                    */
-
-                    $this->ensureInventoryAvailableForApproval(
-                        (int) $roomInventory->id,
-                        $lockedBorrowing->borrow_date,
-                        $lockedBorrowing->expected_return_date,
-                        (int) $lockedBorrowing->id
-                    );
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | Signature Approver
-                    |--------------------------------------------------------------------------
-                    */
-
-                    $approverSignaturePath =
-                        $this->storeSignature(
-                            $validated['approver_signature'] ?? null,
-                            'approver_signature'
-                        );
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | Approve
-                    |--------------------------------------------------------------------------
-                    */
-
-                    $lockedBorrowing->update([
-                        'status' =>
-                        'approved',
-
-                        'approved_by' =>
-                        $user->id,
-
-                        'approved_at' =>
-                        now(),
-
-                        'approver_signature' =>
-                        $approverSignaturePath,
-
-                        'rejection_note' =>
-                        null,
-                    ]);
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | AUTO REJECT PENDING YANG OVERLAP
-                    |--------------------------------------------------------------------------
-                    */
-
-                    $this->rejectConflictingPendingBorrowings(
-                        (int) $roomInventory->id,
-                        $lockedBorrowing->borrow_date,
-                        $lockedBorrowing->expected_return_date,
-                        (int) $lockedBorrowing->id
-                    );
-                }
-            );
-        } catch (\Throwable $e) {
-            if ($approverSignaturePath) {
-                Storage::disk('public')->delete(
-                    $approverSignaturePath
-                );
-            }
-
-            throw $e;
-        }
-
-        return redirect()
-            ->back()
-            ->with(
-                'toast',
-                [
-                    'type' =>
-                    'success',
-
-                    'message' =>
-                    'Peminjaman berhasil disetujui. Pengajuan lain yang bentrok otomatis ditolak.',
-                ]
-            );
-    }
-
-    /**
-     * Reject borrowing.
-     */
-    private function rejectBorrowing(
-        Request $request,
-        Borrowing $borrowing,
-        $user,
-        array $validated
-    ) {
-        $this->authorizeApprovalRole(
-            $user
-        );
-
-        if (
-            $borrowing->status !== self::PENDING_STATUS
-        ) {
-            throw ValidationException::withMessages([
-                'status' =>
-                'Hanya peminjaman dengan status menunggu yang dapat ditolak.',
-            ]);
-        }
-
-        $this->validateApprovalFacultyAccess(
-            $user,
-            $borrowing
-        );
-
-        if (
-            empty(trim(
-                $validated['rejection_note']
-                    ?? ''
-            ))
-        ) {
-            throw ValidationException::withMessages([
-                'rejection_note' =>
-                'Alasan penolakan wajib diisi.',
-            ]);
-        }
-
-        $borrowing->update([
-            'status' =>
-            'rejected',
-
-            'rejection_note' =>
-            trim(
-                $validated['rejection_note']
-            ),
-
-            'approved_by' =>
-            null,
-
-            'approved_at' =>
-            null,
-
-            'approver_signature' =>
-            null,
-        ]);
-
-        return redirect()
-            ->back()
-            ->with(
-                'toast',
-                [
-                    'type' =>
-                    'success',
-
-                    'message' =>
-                    'Peminjaman berhasil ditolak.',
-                ]
-            );
-    }
-
-    /**
-     * Return borrowing.
-     */
-    private function returnBorrowing(
-        Request $request,
-        Borrowing $borrowing,
-        $user,
-        array $validated
-    ) {
-        $this->authorizeApprovalRole(
-            $user
-        );
-
-        if (
-            !in_array(
-                $borrowing->status,
-                [
-                    'approved',
-                    'borrowed',
-                ],
-                true
-            )
-        ) {
-            throw ValidationException::withMessages([
-                'status' =>
-                'Peminjaman ini belum dapat diproses sebagai pengembalian.',
-            ]);
-        }
-
-        $this->validateApprovalFacultyAccess(
-            $user,
-            $borrowing
-        );
-
-        if (
-            empty($validated['actual_return_date'])
-        ) {
-            throw ValidationException::withMessages([
-                'actual_return_date' =>
-                'Tanggal pengembalian wajib diisi.',
-            ]);
-        }
-
-        if (
-            strtotime(
-                $validated['actual_return_date']
-            )
-            <
-            strtotime(
-                $borrowing->borrow_date
-            )
-        ) {
-            throw ValidationException::withMessages([
-                'actual_return_date' =>
-                'Tanggal pengembalian tidak boleh sebelum tanggal peminjaman.',
-            ]);
-        }
-
-        DB::transaction(
-            function () use (
-                $borrowing,
-                $validated
-            ) {
-
-                $roomInventory =
-                    RoomInventory::query()
-                    ->whereKey(
-                        $borrowing->room_inventory_id
-                    )
-                    ->lockForUpdate()
-                    ->first();
-
-                if (!$roomInventory) {
-                    throw ValidationException::withMessages([
-                        'borrowing' =>
-                        'Inventaris peminjaman tidak ditemukan.',
-                    ]);
-                }
-
-
-
-                if (
-                    !empty($validated['condition'])
-                ) {
-                    $roomInventory->update([
-                        'condition' =>
-                        $validated['condition'],
-                    ]);
-                }
-
-
-                $borrowing->update([
-                    'status' =>
-                    'returned',
-
-                    'actual_return_date' =>
-                    $validated['actual_return_date'],
-                ]);
-            }
-        );
-
-        return redirect()
-            ->back()
-            ->with(
-                'toast',
-                [
-                    'type' =>
-                    'success',
-
-                    'message' =>
-                    'Peminjaman berhasil dikembalikan.',
-                ]
-            );
-    }
-
-    /**
-     * Cancel borrowing.
-     */
-    private function cancelBorrowing(
-        Request $request,
-        Borrowing $borrowing,
-        $user
-    ) {
-        $this->authorizeApprovalRole(
-            $user
-        );
-
-        if (
-            !in_array(
-                $borrowing->status,
-                [
-                    'pending',
-                    'approved',
-                ],
-                true
-            )
-        ) {
-            throw ValidationException::withMessages([
-                'status' =>
-                'Hanya peminjaman dengan status menunggu atau disetujui yang dapat dibatalkan.',
-            ]);
-        }
-
-        $this->validateApprovalFacultyAccess(
-            $user,
-            $borrowing
-        );
-
-        $approverSignature =
-            $borrowing->approver_signature;
-
-        DB::transaction(
-            function () use ($borrowing) {
-                $borrowing->update([
-                    'status' =>
-                    'cancelled',
-
-                    'approved_by' =>
-                    null,
-
-                    'approved_at' =>
-                    null,
-
-                    'approver_signature' =>
-                    null,
-                ]);
-            }
-        );
-
-        if ($approverSignature) {
-            Storage::disk('public')->delete(
-                $approverSignature
-            );
-        }
-
-        return redirect()
-            ->back()
-            ->with(
-                'toast',
-                [
-                    'type' =>
-                    'success',
-
-                    'message' =>
-                    'Peminjaman berhasil dibatalkan.',
-                ]
-            );
     }
 
     /**

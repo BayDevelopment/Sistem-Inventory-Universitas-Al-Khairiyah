@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\BorrowingController;
+use App\Http\Controllers\CatalogController;
 use App\Http\Controllers\DashboardAdminController;
 use App\Http\Controllers\DashboardUserController;
 use App\Http\Controllers\FacultyController;
@@ -180,6 +181,12 @@ Route::middleware(['auth'])->group(function () {
                     DashboardUserController::class,
                     'index',
                 ])->name('dashboard');
+
+                Route::resource('borrowings', BorrowingController::class)
+                    ->only(['index', 'store', 'update']);
+                    
+                Route::get('/katalog', [CatalogController::class, 'index'])
+                    ->name('catalog.index');
             });
 
         Route::middleware(['role:super_admin'])
